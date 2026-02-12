@@ -21,7 +21,7 @@ func New(limit int) *Buffer {
 	}
 }
 
-func (b *Buffer) Add(ctx context.Context, msg schema.Message) error {
+func (b *Buffer) Add(_ context.Context, msg schema.Message) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
@@ -34,7 +34,7 @@ func (b *Buffer) Add(ctx context.Context, msg schema.Message) error {
 	return nil
 }
 
-func (b *Buffer) Get(ctx context.Context) ([]schema.Message, error) {
+func (b *Buffer) Get(_ context.Context) ([]schema.Message, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 

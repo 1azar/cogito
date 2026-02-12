@@ -13,7 +13,7 @@ func New() *Mock {
 	return &Mock{}
 }
 
-func (m Mock) Generate(ctx context.Context, msgs []schema.Message) (*llm.Completion, error) {
+func (m Mock) Generate(ctx context.Context, msgs []schema.Message, tools []map[string]any) (*llm.Completion, error) {
 	if len(msgs) < 1 {
 		return nil, nil
 	}

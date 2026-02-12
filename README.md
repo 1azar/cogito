@@ -166,6 +166,11 @@ go run ./example/main.go
 - [x] Memory interface (Buffer)
 - [x] Simple controller
 - [ ] Tool system (function calling)
+  - [ ] FuncWithState
+  - [ ] Validation (simple)
+  - [ ] Middleware
+  - [ ] Streaming
+  - [ ] LLM interface should support tool abstraction (independent drom opeaiprotocol etc)!
 - [ ] Additional controllers (ReAct, Plan-and-Solve)
 
 ### Phase 2: Memory & RAG

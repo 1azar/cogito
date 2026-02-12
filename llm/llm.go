@@ -7,9 +7,10 @@ import (
 )
 
 type Completion struct {
-	Text string
+	Text      string
+	ToolCalls []schema.ToolCall
 }
 
 type LLM interface {
-	Generate(ctx context.Context, msgs []schema.Message) (*Completion, error)
+	Generate(ctx context.Context, msgs []schema.Message, tools []map[string]any) (*Completion, error)
 }
