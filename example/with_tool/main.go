@@ -10,6 +10,7 @@ import (
 	"github.com/1azar/cogito/llm/openai"
 	"github.com/1azar/cogito/memory/buffer"
 	"github.com/1azar/cogito/tool"
+	"github.com/1azar/cogito/tool/tools"
 )
 
 type State struct{}
@@ -30,13 +31,19 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
+	_ = weatherTool
 
 	ag := agent.NewAgent[State](llm).
 		WithController(react.New[State](react.Config{MaxSteps: 5})).
 		WithMemory(buffer.New(10)).
-		WithTools(weatherTool)
+		WithTools(
+			weatherTool,
+			tools.CalculatorTool,
+			tools.CurrentTimeTool,
+		)
 
-	out, err := ag.Run(context.Background(), "What's the weather in capital of Bashkortostan Republic?")
+	//out, err := ag.Run(context.Background(), "Can you give me a sum of temperatures in Capital of USA and capital of Tatarstan republic")
+	out, err := ag.Run(context.Background(), "What time is it in Ufa?")
 	if err != nil {
 		panic(err)
 	}
@@ -54,5 +61,6 @@ type WeatherOutput struct {
 }
 
 func GetWeather(ctx context.Context, in WeatherInput) (WeatherOutput, error) {
+	//return WeatherOutput{}, errors.New("not implemented")
 	return WeatherOutput{Temp: 9}, nil
 }

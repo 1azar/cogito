@@ -46,7 +46,9 @@ func (c *Controller[T]) Run(ctx context.Context, agent controller.AgentLike[T], 
 			// Execute the tool
 			result, err := agent.ExecuteTool(ctx, toolCall.Name, string(toolCall.Arguments))
 			if err != nil {
-				return "", fmt.Errorf("step %d: tool %s failed: %w", step, toolCall.Name, err)
+				// Treat tool errors as observations, not fatal errors
+				// This allows the LLM to see failures and potentially recover
+				result = fmt.Sprintf("Error: %s", err.Error())
 			}
 
 			// Add tool result message to memory for next iteration

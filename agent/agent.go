@@ -159,3 +159,11 @@ func (a *Agent[T]) CallLLMWithTools(ctx context.Context, input string) (*control
 		ToolCalls: resp.ToolCalls,
 	}, nil
 }
+
+// ClearMemory clears the agent's conversation history
+func (a *Agent[T]) ClearMemory() error {
+	if a.memory != nil {
+		return a.memory.Clear()
+	}
+	return nil
+}
