@@ -37,3 +37,9 @@ func (a *Agent[T]) WithTools(tools ...tool.Tool) *Agent[T] {
 
 	return a
 }
+
+// WithPromptFunc sets a dynamic system prompt function that can generate prompts based on context and state
+func (a *Agent[T]) WithPromptFunc(fn PromptFunc[T]) *Agent[T] {
+	a.promptFunc = fn
+	return a
+}

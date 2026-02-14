@@ -37,3 +37,4 @@ go.work
 ehthumbs.db
 Thumbs.db
 /.run/
+/.playground/

@@ -18,9 +18,13 @@ type Agent[T any] struct {
 	memory     memory.Memory
 	controller controller.Controller[T]
 	tools      *tool.Registry
+	promptFunc PromptFunc[T]
 
 	state T
 }
+
+// PromptFunc is a function that dynamically generates a system prompt based on context and state
+type PromptFunc[T any] func(ctx context.Context, state *T) string
 
 func (a *Agent[T]) Run(ctx context.Context, input string) (string, error) {
 	if a.controller == nil {
@@ -32,6 +36,17 @@ func (a *Agent[T]) Run(ctx context.Context, input string) (string, error) {
 
 func (a *Agent[T]) CallLLM(ctx context.Context, input string) (string, error) {
 	var msgs []schema.Message
+
+	// Add system prompt if configured
+	if a.promptFunc != nil {
+		systemPrompt := a.promptFunc(ctx, &a.state)
+		if systemPrompt != "" {
+			msgs = append(msgs, schema.Message{
+				Role:    schema.RoleSystem,
+				Content: systemPrompt,
+			})
+		}
+	}
 
 	if a.memory != nil {
 		history, _ := a.memory.Get(ctx)
@@ -105,6 +120,17 @@ func (a *Agent[T]) AddToolMessage(ctx context.Context, toolCallID string, conten
 
 func (a *Agent[T]) CallLLMWithTools(ctx context.Context, input string) (*controller.Completion, error) {
 	var msgs []schema.Message
+
+	// Add system prompt if configured
+	if a.promptFunc != nil {
+		systemPrompt := a.promptFunc(ctx, &a.state)
+		if systemPrompt != "" {
+			msgs = append(msgs, schema.Message{
+				Role:    schema.RoleSystem,
+				Content: systemPrompt,
+			})
+		}
+	}
 
 	if a.memory != nil {
 		history, _ := a.memory.Get(ctx)
