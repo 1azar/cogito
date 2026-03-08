@@ -50,6 +50,14 @@ func Func[I any, O any](
 		)
 	}
 
+	if t.inputType.Kind() == reflect.Map && t.inputType.Key().Kind() != reflect.String {
+		return nil, fmt.Errorf(
+			"tool %s: map input key type must be string, got %s",
+			name,
+			t.inputType.Key().Kind(),
+		)
+	}
+
 	return t, nil
 }
 
@@ -61,8 +69,8 @@ func (t *funcTool) Description() string {
 	return t.desc
 }
 
-func (t *funcTool) Schema() Schema {
-	return Schema{
+func (t *funcTool) Spec() Spec {
+	return Spec{
 		Name:        t.name,
 		Description: t.desc,
 		Parameters:  structSchema(t.inputType),

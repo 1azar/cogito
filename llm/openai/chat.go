@@ -11,18 +11,28 @@ import (
 
 	"github.com/1azar/cogito/llm"
 	"github.com/1azar/cogito/schema"
+	"github.com/1azar/cogito/tool"
 )
 
 type chatRequest struct {
 	Model       string        `json:"model"`
 	Messages    []chatMessage `json:"messages"`
 	Tools       []chatTool    `json:"tools,omitempty"`
-	Temperature float64       `json:"temperature,omitempty"`
+	ToolChoice  any           `json:"tool_choice,omitempty"`
+	Temperature *float64      `json:"temperature,omitempty"`
+	MaxTokens   *int          `json:"max_tokens,omitempty"`
+	Stop        []string      `json:"stop,omitempty"`
 }
 
 type chatTool struct {
-	Type     string         `json:"type"`
-	Function map[string]any `json:"function"`
+	Type     string           `json:"type"`
+	Function chatToolFunction `json:"function"`
+}
+
+type chatToolFunction struct {
+	Name        string          `json:"name"`
+	Description string          `json:"description,omitempty"`
+	Parameters  tool.JSONSchema `json:"parameters"`
 }
 
 type chatMessage struct {
@@ -49,6 +59,7 @@ type chatResponse struct {
 			Content   string         `json:"content"`
 			ToolCalls []chatToolCall `json:"tool_calls,omitempty"`
 		} `json:"message"`
+		FinishReason string `json:"finish_reason"`
 	} `json:"choices"`
 
 	Error *struct {
@@ -57,19 +68,29 @@ type chatResponse struct {
 	} `json:"error,omitempty"`
 }
 
-func (c *Client) Generate(
-	ctx context.Context,
-	msgs []schema.Message,
-	tools []map[string]any,
-) (*llm.Completion, error) {
+func (c *Client) Generate(ctx context.Context, req llm.Request) (*llm.Response, error) {
 
 	reqBody := chatRequest{
 		Model:    c.cfg.Model,
-		Messages: make([]chatMessage, 0, len(msgs)),
-		Tools:    make([]chatTool, 0, len(tools)),
+		Messages: make([]chatMessage, 0, len(req.Messages)),
+		Tools:    make([]chatTool, 0, len(req.Tools)),
 	}
 
-	for _, m := range msgs {
+	if req.Params.Temperature != nil {
+		reqBody.Temperature = req.Params.Temperature
+	}
+	if req.Params.MaxTokens != nil {
+		reqBody.MaxTokens = req.Params.MaxTokens
+	}
+	if len(req.Params.Stop) > 0 {
+		reqBody.Stop = req.Params.Stop
+	}
+
+	if !req.ToolChoice.IsZero() {
+		reqBody.ToolChoice = mapToolChoice(req.ToolChoice)
+	}
+
+	for _, m := range req.Messages {
 		cm := chatMessage{
 			Role:    string(m.Role),
 			Content: m.Content,
@@ -93,10 +114,14 @@ func (c *Client) Generate(
 		reqBody.Messages = append(reqBody.Messages, cm)
 	}
 
-	for _, t := range tools {
+	for _, t := range req.Tools {
 		reqBody.Tools = append(reqBody.Tools, chatTool{
-			Type:     t["type"].(string),
-			Function: t["function"].(map[string]any),
+			Type: "function",
+			Function: chatToolFunction{
+				Name:        t.Name,
+				Description: t.Description,
+				Parameters:  t.Parameters,
+			},
 		})
 	}
 
@@ -105,10 +130,7 @@ func (c *Client) Generate(
 		return nil, err
 	}
 
-	// Debug: print request body
-	fmt.Printf("[DEBUG] OpenAI Request: %s\n", string(data))
-
-	req, err := http.NewRequestWithContext(
+	httpReq, err := http.NewRequestWithContext(
 		ctx,
 		http.MethodPost,
 		c.cfg.BaseURL+"/chat/completions",
@@ -118,10 +140,10 @@ func (c *Client) Generate(
 		return nil, err
 	}
 
-	req.Header.Set("Authorization", "Bearer "+c.cfg.APIKey)
-	req.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("Authorization", "Bearer "+c.cfg.APIKey)
+	httpReq.Header.Set("Content-Type", "application/json")
 
-	resp, err := c.client.Do(req)
+	resp, err := c.client.Do(httpReq)
 	if err != nil {
 		return nil, err
 	}
@@ -154,9 +176,11 @@ func (c *Client) Generate(
 		return nil, errors.New("openai: empty response")
 	}
 
-	completion := &llm.Completion{
+	completion := &llm.Response{
 		Text: out.Choices[0].Message.Content,
+		Raw:  out,
 	}
+	completion.FinishReason = out.Choices[0].FinishReason
 
 	if len(out.Choices[0].Message.ToolCalls) > 0 {
 		completion.ToolCalls = make([]schema.ToolCall, len(out.Choices[0].Message.ToolCalls))
@@ -170,4 +194,27 @@ func (c *Client) Generate(
 	}
 
 	return completion, nil
+}
+
+func mapToolChoice(choice llm.ToolChoice) any {
+	switch choice.Mode {
+	case llm.ToolChoiceAuto:
+		return "auto"
+	case llm.ToolChoiceNone:
+		return "none"
+	case llm.ToolChoiceRequired:
+		return "required"
+	case llm.ToolChoiceNamed:
+		if choice.Name == "" {
+			return "auto"
+		}
+		return map[string]any{
+			"type": "function",
+			"function": map[string]any{
+				"name": choice.Name,
+			},
+		}
+	default:
+		return "auto"
+	}
 }

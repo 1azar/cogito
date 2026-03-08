@@ -28,13 +28,13 @@ func (r *Registry) Get(name string) (Tool, bool) {
 	return tool, ok
 }
 
-func (r *Registry) Schemas() []Schema {
+func (r *Registry) Specs() []Spec {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
-	out := make([]Schema, 0, len(r.tools))
+	out := make([]Spec, 0, len(r.tools))
 	for _, tool := range r.tools {
-		out = append(out, tool.Schema())
+		out = append(out, tool.Spec())
 	}
 
 	return out

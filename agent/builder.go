@@ -5,12 +5,14 @@ import (
 	"github.com/1azar/cogito/llm"
 	"github.com/1azar/cogito/memory"
 	"github.com/1azar/cogito/tool"
+	"github.com/1azar/cogito/toolruntime"
 )
 
 func NewAgent[T any](l llm.LLM) *Agent[T] {
 	return &Agent[T]{
-		llm:   l,
-		tools: tool.NewRegistry(),
+		llm:      l,
+		tools:    tool.NewRegistry(),
+		executor: toolruntime.NewExecutor(toolruntime.DefaultPolicy()),
 	}
 }
 
@@ -35,6 +37,14 @@ func (a *Agent[T]) WithTools(tools ...tool.Tool) *Agent[T] {
 		a.tools.Register(t)
 	}
 
+	return a
+}
+
+func (a *Agent[T]) WithToolExecutor(executor toolruntime.Executor) *Agent[T] {
+	if executor == nil {
+		panic("nil tool executor")
+	}
+	a.executor = executor
 	return a
 }
 

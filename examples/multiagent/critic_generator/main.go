@@ -4,11 +4,13 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"os"
 	"strings"
 
 	"github.com/1azar/cogito/agent"
-	"github.com/1azar/cogito/controller/simple"
-	"github.com/1azar/cogito/llm/mock"
+	"github.com/1azar/cogito/controller/react"
+	"github.com/1azar/cogito/llm/openai"
+	"github.com/1azar/cogito/memory/buffer"
 	"github.com/1azar/cogito/workflow"
 )
 
@@ -22,18 +24,30 @@ type IterationState struct {
 }
 
 func main() {
-	fmt.Println("=== Critic-Generator Loop Example ===\n")
+	fmt.Println("=== Critic-Generator Loop Example ===")
 	CriticGeneratorLoop()
 }
 
 // CriticGeneratorLoop demonstrates a generator creating content and a critic reviewing it
 // This continues in a loop until the critic approves or max iterations reached
 func CriticGeneratorLoop() {
-	llm := mock.New()
+	//llm := mock.New()
+	llm, err := openai.New(openai.Config{
+		APIKey:  os.Getenv("OPENAI_API_KEY"),
+		BaseURL: os.Getenv("OPENAI_BASE_URL"),
+		Model:   os.Getenv("OPENAI_MODEL"),
+		Timeout: 0,
+	})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to create LLM: %v\n", err)
+		os.Exit(1)
+	}
 
 	// Generator agent - creates content
 	generatorAgent := agent.NewAgent[struct{}](llm).
-		WithController(simple.New[struct{}]()).
+		//WithController(simple.New[struct{}]()).
+		WithController(react.New[struct{}](react.Config{MaxSteps: 5})).
+		WithMemory(buffer.New(100)).
 		WithPromptFunc(func(ctx context.Context, state *struct{}) string {
 			return `You are a content generator. Create high-quality, compelling content.
 
@@ -48,7 +62,9 @@ Improve the content based on feedback provided.`
 
 	// Critic agent - reviews and critiques
 	criticAgent := agent.NewAgent[struct{}](llm).
-		WithController(simple.New[struct{}]()).
+		//WithController(simple.New[struct{}]()).
+		WithController(react.New[struct{}](react.Config{MaxSteps: 5})).
+		WithMemory(buffer.New(100)).
 		WithPromptFunc(func(ctx context.Context, state *struct{}) string {
 			return `You are a critical reviewer. Evaluate content rigorously.
 
@@ -102,7 +118,7 @@ Otherwise, explain what needs improvement.`
 
 	g.AddConditionalEdge("critic", func(s *IterationState) (string, error) {
 		// End if approved or max iterations reached
-		if s.Approved || s.Iteration >= 5 {
+		if s.Approved || s.Iteration >= 3 {
 			return "end", nil
 		}
 		s.Iteration++
@@ -122,7 +138,7 @@ Otherwise, explain what needs improvement.`
 	}
 
 	fmt.Printf("Prompt: %s\n\n", initialState.Prompt)
-	fmt.Println("--- Starting Iteration Process ---\n")
+	fmt.Println("--- Starting Iteration Process ---")
 
 	result, err := g.Run(ctx, initialState)
 	if err != nil {

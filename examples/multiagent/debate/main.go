@@ -24,7 +24,7 @@ type DebateState struct {
 }
 
 func main() {
-	fmt.Println("=== AI Debate Example ===\n")
+	fmt.Println("=== AI Debate Example ===")
 	DebateExample()
 }
 
@@ -160,7 +160,7 @@ Who won? Respond with "proponent" or "opponent"`, s.Topic, s.ProponentMsg, s.Opp
 	}
 
 	fmt.Printf("Topic: %s\n\n", initialState.Topic)
-	fmt.Println("--- Starting Debate ---\n")
+	fmt.Println("--- Starting Debate ---")
 
 	result, err := g.Run(ctx, initialState)
 	if err != nil {

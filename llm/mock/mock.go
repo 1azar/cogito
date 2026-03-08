@@ -4,7 +4,6 @@ import (
 	"context"
 
 	"github.com/1azar/cogito/llm"
-	"github.com/1azar/cogito/schema"
 )
 
 type Mock struct{}
@@ -13,14 +12,15 @@ func New() *Mock {
 	return &Mock{}
 }
 
-func (m Mock) Generate(ctx context.Context, msgs []schema.Message, tools []map[string]any) (*llm.Completion, error) {
+func (m Mock) Generate(ctx context.Context, req llm.Request) (*llm.Response, error) {
+	msgs := req.Messages
 	if len(msgs) < 1 {
 		return nil, nil
 	}
 
 	last := msgs[len(msgs)-1]
 
-	return &llm.Completion{
+	return &llm.Response{
 		Text: `Answer to: "` + last.Content + `"`,
 	}, nil
 }

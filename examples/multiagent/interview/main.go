@@ -23,7 +23,7 @@ type InterviewState struct {
 }
 
 func main() {
-	fmt.Println("=== AI Interview Example ===\n")
+	fmt.Println("=== AI Interview Example ===")
 	InterviewExample()
 }
 
@@ -130,7 +130,7 @@ Show enthusiasm and ask for clarification if needed.`
 	}
 
 	fmt.Printf("Position: %s\n\n", initialState.Position)
-	fmt.Println("--- Starting Interview ---\n")
+	fmt.Println("--- Starting Interview ---")
 
 	result, err := g.Run(ctx, initialState)
 	if err != nil {
@@ -140,7 +140,7 @@ Show enthusiasm and ask for clarification if needed.`
 
 	fmt.Println("\n--- Interview Complete ---")
 	fmt.Printf("Questions asked: %d\n", result.QuestionCount)
-	fmt.Printf("Decision: ", result.Question)
+	fmt.Printf("Decision: %s\n", result.Question)
 
 	if result.Hired {
 		fmt.Println("✅ HIRED")

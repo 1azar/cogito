@@ -4,13 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 
 	"github.com/1azar/cogito/controller"
 	"github.com/1azar/cogito/llm"
 	"github.com/1azar/cogito/memory"
 	"github.com/1azar/cogito/schema"
 	"github.com/1azar/cogito/tool"
+	"github.com/1azar/cogito/toolruntime"
 )
 
 type Agent[T any] struct {
@@ -18,6 +18,7 @@ type Agent[T any] struct {
 	memory     memory.Memory
 	controller controller.Controller[T]
 	tools      *tool.Registry
+	executor   toolruntime.Executor
 	promptFunc PromptFunc[T]
 
 	state T
@@ -58,10 +59,10 @@ func (a *Agent[T]) CallLLM(ctx context.Context, input string) (string, error) {
 		Content: input,
 	})
 
-	// Collect tool schemas (empty for simple LLM calls, but the interface expects it)
-	var tools []map[string]any
-
-	resp, err := a.llm.Generate(ctx, msgs, tools)
+	resp, err := a.llm.Generate(ctx, llm.Request{
+		Messages: msgs,
+		Params:   llm.Params{},
+	})
 	if err != nil {
 		return "", err
 	}
@@ -88,34 +89,24 @@ func (a *Agent[T]) Tools() *tool.Registry {
 	return a.tools
 }
 
-func (a *Agent[T]) ExecuteTool(ctx context.Context, name string, arguments string) (string, error) {
-	t, ok := a.tools.Get(name)
-	if !ok {
-		return "", fmt.Errorf("tool %s not found", name)
+func (a *Agent[T]) RunToolCalls(ctx context.Context, calls []schema.ToolCall) ([]toolruntime.Result, error) {
+	if a.executor == nil {
+		return nil, errors.New("tool executor is nil")
 	}
 
-	result, err := t.Call(ctx, json.RawMessage(arguments))
-	if err != nil {
-		return "", err
-	}
-
-	output, err := json.Marshal(result)
-	if err != nil {
-		return "", fmt.Errorf("failed to marshal tool result: %w", err)
-	}
-
-	return string(output), nil
-}
-
-// AddToolMessage adds a tool response message to memory
-func (a *Agent[T]) AddToolMessage(ctx context.Context, toolCallID string, content string) {
+	results, err := a.executor.Execute(ctx, calls, a.tools)
 	if a.memory != nil {
-		_ = a.memory.Add(ctx, schema.Message{
-			Role:       schema.RoleTool,
-			ToolCallID: toolCallID,
-			Content:    content,
-		})
+		for _, result := range results {
+			payload := mustMarshalToolResult(result)
+			_ = a.memory.Add(ctx, schema.Message{
+				Role:       schema.RoleTool,
+				ToolCallID: result.ToolCallID,
+				Content:    payload,
+			})
+		}
 	}
+
+	return results, err
 }
 
 func (a *Agent[T]) CallLLMWithTools(ctx context.Context, input string) (*controller.Completion, error) {
@@ -144,27 +135,22 @@ func (a *Agent[T]) CallLLMWithTools(ctx context.Context, input string) (*control
 			Content: input,
 		})
 		// Also add to memory
-		_ = a.memory.Add(ctx, schema.Message{
-			Role:    schema.RoleUser,
-			Content: input,
-		})
+		if a.memory != nil {
+			_ = a.memory.Add(ctx, schema.Message{
+				Role:    schema.RoleUser,
+				Content: input,
+			})
+		}
 	}
 
-	// Collect tool schemas
-	var tools []map[string]any
-	schemas := a.tools.Schemas()
-	for _, tschema := range schemas {
-		tools = append(tools, map[string]any{
-			"type": "function",
-			"function": map[string]any{
-				"name":        tschema.Name,
-				"description": tschema.Description,
-				"parameters":  tschema.Parameters,
-			},
-		})
-	}
-
-	resp, err := a.llm.Generate(ctx, msgs, tools)
+	resp, err := a.llm.Generate(ctx, llm.Request{
+		Messages: msgs,
+		Tools:    a.tools.Specs(),
+		ToolChoice: llm.ToolChoice{
+			Mode: llm.ToolChoiceAuto,
+		},
+		Params: llm.Params{},
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -192,4 +178,12 @@ func (a *Agent[T]) ClearMemory() error {
 		return a.memory.Clear()
 	}
 	return nil
+}
+
+func mustMarshalToolResult(result toolruntime.Result) string {
+	payload, err := json.Marshal(result)
+	if err != nil {
+		return `{"status":"error","error":{"code":"marshal_error","message":"failed to serialize tool result"}}`
+	}
+	return string(payload)
 }

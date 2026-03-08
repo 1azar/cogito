@@ -1,201 +1,286 @@
 # Cogito
 
-A modular, type-safe LLM agent framework for Go.
+A modular, type-safe framework for building LLM agents and workflow orchestration in Go.
 
-> **Status:** Early Development | **Go:** 1.24+
+> **Status:** Early Development  
+> **Go:** 1.24+
 
 ## Overview
 
-Cogito is a Go framework for building LLM-powered agents, inspired by LangChain, LangGraph, and AutoGen. It emphasizes:
+Cogito focuses on three goals:
 
-- **Type Safety** - Generics-based agents with compile-time state validation
-- **Modularity** - Pluggable LLM providers, memory systems, and controllers
-- **Simplicity** - Builder pattern for clean, readable agent configuration
-- **Flexibility** - Swap any component (LLM, Memory, Controller) via interfaces
+- **Composable architecture**: providers, controllers, memory, tools, and workflows are decoupled.
+- **Type-safe orchestration**: agents are generic over state (`Agent[T]`), and workflows are typed (`Graph[T]`).
+- **Pragmatic runtime**: ReAct + tool execution includes strict argument validation, retries, timeouts, and parallelism.
 
-## Quick Start
+## Installation
 
 ```bash
 go get github.com/1azar/cogito
 ```
 
+## Quick Start
+
 ```go
 package main
 
 import (
-    "context"
-    "fmt"
-    "github.com/1azar/cogito/agent"
-    "github.com/1azar/cogito/controller/simple"
-    "github.com/1azar/cogito/llm/openai"
-    "github.com/1azar/cogito/memory/buffer"
+	"context"
+	"fmt"
+	"os"
+
+	"github.com/1azar/cogito/agent"
+	"github.com/1azar/cogito/controller/simple"
+	"github.com/1azar/cogito/llm/openai"
+	"github.com/1azar/cogito/memory/buffer"
 )
 
 type State struct{}
 
 func main() {
-    // Create LLM client
-    llm, _ := openai.New(openai.Config{
-        APIKey: "your-api-key",
-        Model:  "gpt-4o-mini",
-    })
+	provider, err := openai.New(openai.Config{
+		APIKey: os.Getenv("OPENAI_API_KEY"),
+		Model:  "gpt-4o-mini",
+	})
+	if err != nil {
+		panic(err)
+	}
 
-    // Build agent with memory and controller
-    ag := agent.NewAgent[State](llm).
-        WithController(simple.New[State]()).
-        WithMemory(buffer.New(10))
+	ag := agent.NewAgent[State](provider).
+		WithController(simple.New[State]()).
+		WithMemory(buffer.New(10))
 
-    // Run the agent
-    response, err := ag.Run(context.Background(), "Hello!")
-    if err != nil {
-        panic(err)
-    }
+	out, err := ag.Run(context.Background(), "Hello!")
+	if err != nil {
+		panic(err)
+	}
 
-    fmt.Println(response)
+	fmt.Println(out)
 }
 ```
 
 ## Architecture
 
+### High-Level Component Model
+
+```text
+Application Layer
+  ├─ Workflow Graph (optional)
+  └─ Agent composition
+
+Agent Core
+  ├─ Controller (strategy: simple, react, ...)
+  ├─ LLM interface (provider-agnostic request/response)
+  ├─ Memory interface (conversation state)
+  ├─ Tool registry (tool specs + implementations)
+  └─ Tool runtime executor (validation/retry/timeout/parallel)
+
+Provider Adapters
+  ├─ openai
+  └─ mock
 ```
-┌─────────────────────────────────────────────────────┐
-│                      Agent[T]                       │
-│  ┌───────────┐  ┌───────────┐  ┌──────────────┐   │
-│  │    LLM    │  │  Memory   │  │  Controller  │   │
-│  │ Provider  │  │           │  │  (Strategy)  │   │
-│  └───────────┘  └───────────┘  └──────────────┘   │
-└─────────────────────────────────────────────────────┘
-```
 
-### Core Components
+### Core Interfaces (Current)
 
-| Component | Interface | Purpose |
-|-----------|-----------|---------|
-| **LLM** | `Generate(ctx, messages) -> Completion` | Abstraction over LLM providers |
-| **Memory** | `Add/Get/Clear` | Conversation history storage |
-| **Controller** | `Run(ctx, agent, input) -> string` | Agent behavior strategy |
-| **Agent** | Generic over state `T` | Orchestrates all components |
+| Component | Interface / Contract | Responsibility |
+|---|---|---|
+| `llm.LLM` | `Generate(ctx, llm.Request) (*llm.Response, error)` | Provider-agnostic model invocation |
+| `memory.Memory` | `Add/Get/Clear` | Conversation persistence |
+| `controller.Controller[T]` | `Run(ctx, agent, input) (string, error)` | Agent behavior loop |
+| `tool.Tool` | `Name/Description/Spec/Call` | Typed tool declaration and execution |
+| `toolruntime.Executor` | `Execute(ctx, calls, registry) ([]Result, error)` | Tool-call orchestration policy |
+| `workflow.Graph[T]` | `Run(ctx, initialState) (T, error)` | Typed multi-node orchestration |
 
-## Features
+## Provider Abstraction (`llm`)
 
-### Type-Safe State
+Provider abstraction is centered on explicit request/response types:
+
+- `llm.Request`:
+  - `Messages []schema.Message`
+  - `Tools []tool.Spec`
+  - `ToolChoice llm.ToolChoice`
+  - `Params llm.Params` (`Temperature`, `MaxTokens`, `Stop`)
+- `llm.Response`:
+  - `Text string`
+  - `ToolCalls []schema.ToolCall`
+  - `FinishReason string`
+  - `Raw any` (provider-specific payload for diagnostics)
+
+This keeps provider-specific wire formats inside adapters (e.g. `llm/openai`) and out of business logic.
+
+## Tool System
+
+### Tool Declaration
+
+Tools are declared as Go functions and wrapped via `tool.Func`:
 
 ```go
-type AgentState struct {
-    Query  string
-    Result string
-    Count  int
-}
-
-agent := agent.NewAgent[AgentState](llm)
-state := agent.State()  // *AgentState
-```
-
-### Pluggable Controllers
-
-Controllers define how the agent "thinks":
-
-```go
-import "github.com/1azar/cogito/controller/simple"
-
-// Simple: direct LLM call
-agent.WithController(simple.New[State]())
-
-// ReAct: thought-action-observation loop (planned)
-// agent.WithController(react.New[State]())
-```
-
-### Memory Implementations
-
-```go
-import "github.com/1azar/cogito/memory/buffer"
-
-// Sliding window buffer (keeps last N messages)
-agent.WithMemory(buffer.New(10))
-
-// Vector stores with RAG support (planned)
-```
-
-### LLM Providers
-
-```go
-import "github.com/1azar/cogito/llm/openai"
-
-llm, _ := openai.New(openai.Config{
-    APIKey:  "your-api-key",
-    BaseURL:  "https://api.openai.com/v1", // optional
-    Model:   "gpt-4o-mini",
-    Timeout: 60 * time.Second,
+t, err := tool.Func("get_weather", "Get weather by city", func(ctx context.Context, in WeatherInput) (WeatherOutput, error) {
+	return WeatherOutput{TempC: 21}, nil
 })
+```
 
-// Mock for testing
-import "github.com/1azar/cogito/llm/mock"
-llm := mock.New()
+### Schema Generation
+
+`tool.Func` reflects input types into `tool.JSONSchema`:
+
+- exported struct fields become properties
+- `json:"field,omitempty"` marks non-required fields
+- nested structs, arrays, primitive types supported
+
+### Validation
+
+Before invoking a tool, `toolruntime` validates arguments against the tool schema.
+
+Current validator behavior:
+
+- required fields are enforced
+- unknown fields are rejected
+- type mismatches are rejected
+- validation errors are returned as structured executor errors
+
+## Tool Runtime (`toolruntime`)
+
+`toolruntime.DefaultExecutor` is the execution plane for tool calls.
+
+### Capabilities
+
+- strict argument validation
+- configurable parallel execution (`MaxParallel`)
+- per-tool timeout (`PerToolTimeout`)
+- retries (`Retry.MaxAttempts`)
+- middleware chain (`Middleware`) around tool invocation
+- structured result envelope (`toolruntime.Result`)
+
+### Result Envelope
+
+Tool results written to memory use a structured JSON payload:
+
+```json
+{
+  "tool_call_id": "call_1",
+  "name": "calculator",
+  "status": "success",
+  "output": {"result": 12},
+  "meta": {"duration_ms": 3, "attempts": 1}
+}
+```
+
+Error case:
+
+```json
+{
+  "tool_call_id": "call_2",
+  "name": "calculator",
+  "status": "error",
+  "error": {"code": "validation_error", "message": "$.expression is required"},
+  "meta": {"duration_ms": 0, "attempts": 1}
+}
+```
+
+## Controllers
+
+### `simple`
+
+Single LLM call, no iterative tool loop.
+
+### `react`
+
+ReAct loop (`Thought -> Action -> Observation`) with bounded steps:
+
+1. Call LLM with messages + tool specs.
+2. If `ToolCalls` is empty, return final text.
+3. Execute tool calls via `toolruntime.Executor`.
+4. Append structured tool observations to memory.
+5. Repeat until final answer or `MaxSteps` reached.
+
+## Agent Lifecycle
+
+An `Agent[T]` wires the runtime pieces together:
+
+1. build with `agent.NewAgent[T](provider)`
+2. attach behavior with `.WithController(...)`
+3. attach memory with `.WithMemory(...)`
+4. register tools with `.WithTools(...)`
+5. optionally override executor via `.WithToolExecutor(...)`
+6. optionally add dynamic system prompt via `.WithPromptFunc(...)`
+7. run via `.Run(ctx, input)`
+
+## Workflow Orchestration (`workflow`)
+
+`workflow.Graph[T]` lets you combine multiple nodes (agents or functions) into typed orchestration flows.
+
+- `AddNode(id, node)`
+- `AddEdge(from, to)` for direct transitions
+- `AddConditionalEdge(from, router, targets)` for branching
+- `SetEntry(id)` to define start node
+- `Run(ctx, state)` to execute until `workflow.EndNode`
+
+For agent nodes, use factory helpers:
+
+- `workflow.NewAgentNodeWithField`
+- `workflow.NewAgentNodeWithKey`
+- `workflow.NewAgentNodeWithKeyValue`
+
+## Detailed Example (Full Stack)
+
+The most complete example is:
+
+- `examples/full_framework/main.go`
+
+It demonstrates in one flow:
+
+- typed workflow routing (router -> specialist/general)
+- dynamic prompts
+- memory-backed conversations
+- ReAct with multiple tool calls
+- strict validation error handling
+- retry of transient tool failures
+- parallel execution policy
+- custom tool runtime middleware logging
+
+Run it:
+
+```bash
+go run ./examples/full_framework
 ```
 
 ## Project Structure
 
-```
+```text
 cogito/
-├── agent/          - Core Agent[T] with builder pattern
-├── controller/     - Behavior strategies (simple, react, etc.)
-├── llm/            - LLM providers (openai, mock)
-├── memory/         - Memory implementations (buffer)
-├── schema/         - Shared types (Message, Role)
-└── example/        - Usage examples
+├── agent/          # Agent[T] core and builder
+├── controller/     # Behavior strategies (simple, react)
+├── llm/            # Provider abstraction + adapters (openai, mock)
+├── memory/         # Memory interfaces and implementations
+├── schema/         # Shared message and tool-call schemas
+├── tool/           # Tool declaration, registry, schema reflection
+├── toolruntime/    # Tool execution runtime (policy/middleware/validation)
+├── workflow/       # Typed workflow graph orchestration
+└── examples/       # Runnable examples
 ```
 
 ## Development
 
 ```bash
-# Run tests
+# Run all tests
 go test ./...
 
 # Run with race detector
 go test -race ./...
 
-# Run example
-go run ./example/main.go
+# Run basic example
+go run ./examples/main.go
+
+# Run full architecture example
+go run ./examples/full_framework
 ```
 
-## Roadmap
+## Current Limitations
 
-### Phase 1: Core Foundation (Current)
-- [x] Basic Agent with generics
-- [x] LLM abstraction (OpenAI, Mock)
-- [x] Memory interface (Buffer)
-- [x] Simple controller
-- [ ] Tool system (function calling)
-  - [ ] FuncWithState
-  - [ ] Validation (simple)
-  - [ ] Middleware
-  - [ ] Streaming
-  - [ ] LLM interface should support tool abstraction (independent drom opeaiprotocol etc)!
-- [ ] Additional controllers (ReAct, Plan-and-Solve)
-
-### Phase 2: Memory & RAG
-- [ ] Vector stores (Pinecone, Qdrant, pgvector)
-- [ ] Embeddings (OpenAI, local)
-- [ ] Semantic memory with RAG
-- [ ] Document processing (PDF, HTML)
-
-### Phase 3: Multi-Agent
-- [ ] Workflow graph engine
-- [ ] Agent coordination (Supervisor pattern)
-- [ ] Shared memory between agents
-
-### Phase 4: Production
-- [ ] Middleware (retry, cache, rate-limit)
-- [ ] Streaming API
-- [ ] Observability (OpenTelemetry, Prometheus)
-- [ ] Structured output
-
-## Design Principles
-
-1. **Interfaces over implementations** - Swap any component
-2. **Generics for type safety** - Compile-time validation
-3. **Zero boilerplate** - Reflection for tools, not users
-4. **Go idioms** - Clean code, minimal dependencies
+- First-party provider adapters currently included: `openai`, `mock`.
+- Streaming API is not yet implemented.
+- JSON schema validation covers the framework's supported subset, not the full JSON Schema spec.
 
 ## License
 

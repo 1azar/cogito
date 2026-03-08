@@ -5,6 +5,7 @@ import (
 
 	"github.com/1azar/cogito/schema"
 	"github.com/1azar/cogito/tool"
+	"github.com/1azar/cogito/toolruntime"
 )
 
 type Completion struct {
@@ -17,8 +18,7 @@ type AgentLike[T any] interface {
 	CallLLMWithTools(ctx context.Context, input string) (*Completion, error)
 	State() *T
 	Tools() *tool.Registry
-	ExecuteTool(ctx context.Context, name string, arguments string) (string, error)
-	AddToolMessage(ctx context.Context, toolCallID string, content string)
+	RunToolCalls(ctx context.Context, calls []schema.ToolCall) ([]toolruntime.Result, error)
 }
 
 type Controller[T any] interface {

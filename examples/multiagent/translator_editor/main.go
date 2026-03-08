@@ -22,7 +22,7 @@ type CollaborationState struct {
 }
 
 func main() {
-	fmt.Println("=== Translator-Editor Collaboration Example ===\n")
+	fmt.Println("=== Translator-Editor Collaboration Example ===")
 	TranslatorEditorCollab()
 }
 
@@ -117,7 +117,7 @@ If the translation is excellent, respond with "APPROVED".`
 	}
 
 	fmt.Printf("Original text: %s\n\n", initialState.OriginalText)
-	fmt.Println("--- Starting Translation Process ---\n")
+	fmt.Println("--- Starting Translation Process ---")
 
 	result, err := g.Run(ctx, initialState)
 	if err != nil {

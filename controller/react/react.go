@@ -41,18 +41,10 @@ func (c *Controller[T]) Run(ctx context.Context, agent controller.AgentLike[T], 
 			return completion.Text, nil
 		}
 
-		// Execute tool calls and add results to memory
-		for _, toolCall := range completion.ToolCalls {
-			// Execute the tool
-			result, err := agent.ExecuteTool(ctx, toolCall.Name, string(toolCall.Arguments))
-			if err != nil {
-				// Treat tool errors as observations, not fatal errors
-				// This allows the LLM to see failures and potentially recover
-				result = fmt.Sprintf("Error: %s", err.Error())
-			}
-
-			// Add tool result message to memory for next iteration
-			agent.AddToolMessage(ctx, toolCall.ID, result)
+		// Execute tool calls via runtime (validation, retry, timeout, parallelism)
+		_, err = agent.RunToolCalls(ctx, completion.ToolCalls)
+		if err != nil {
+			return "", fmt.Errorf("step %d: tool execution failed: %w", step, err)
 		}
 
 		// For subsequent iterations, use empty string since memory has the full context
