@@ -194,6 +194,15 @@ ReAct loop (`Thought -> Action -> Observation`) with bounded steps:
 4. Append structured tool observations to memory.
 5. Repeat until final answer or `MaxSteps` reached.
 
+### `structured`
+
+Strict structured output controller with self-repair loop:
+
+1. Injects a schema-aware prompt for target output type.
+2. Extracts JSON even if model returns extra text.
+3. Decodes into user-provided Go pointer (`Config.Output`).
+4. Retries with repair prompt when parsing/validation fails.
+
 ## Agent Lifecycle
 
 An `Agent[T]` wires the runtime pieces together:

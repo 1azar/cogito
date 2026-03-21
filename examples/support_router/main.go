@@ -6,16 +6,15 @@ import (
 	"errors"
 	"fmt"
 	"math/rand"
-	"regexp"
+	"os"
 	"strconv"
 	"strings"
 
 	"github.com/1azar/cogito/agent"
 	"github.com/1azar/cogito/controller/react"
 	"github.com/1azar/cogito/controller/simple"
-	"github.com/1azar/cogito/llm"
+	"github.com/1azar/cogito/llm/openai"
 	"github.com/1azar/cogito/memory/buffer"
-	"github.com/1azar/cogito/schema"
 	"github.com/1azar/cogito/tool"
 	"github.com/1azar/cogito/workflow"
 )
@@ -39,20 +38,30 @@ type RouterDecision struct {
 }
 
 func main() {
+	llm, err := openai.New(openai.Config{
+		APIKey:  os.Getenv("OPENAI_API_KEY"),
+		BaseURL: os.Getenv("OPENAI_BASE_URL"),
+		Model:   os.Getenv("OPENAI_MODEL"),
+		Timeout: 0,
+	})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to create LLM: %v\n", err)
+		os.Exit(1)
+	}
 
-	lookupTool, err := tool.Func(
-		"get_user_id_by_cert_activation_key",
-		"Find user ID by certificate activation key",
+	lookupActivatorByKeyTool, err := tool.Func(
+		"get_activator_user_id_by_cert_activation_key",
+		"Find activator user ID by certificate activation key",
 		mockGetUserIDByCertActivationKey,
 	)
 	if err != nil {
 		panic(err)
 	}
 
-	specialistAgent := agent.NewAgent[struct{}](&specialistMockLLM{}).
+	specialistAgent := agent.NewAgent[struct{}](llm).
 		WithController(react.New[struct{}](react.Config{MaxSteps: 4})).
 		WithMemory(buffer.New(20)).
-		WithTools(lookupTool).
+		WithTools(lookupActivatorByKeyTool).
 		WithPromptFunc(func(ctx context.Context, state *struct{}) string {
 			return `Ты специалист поддержки сервиса подарочных сертификатов.
 
@@ -63,6 +72,9 @@ func main() {
 - Получатель вводит код активации и активирует сертификат.
 - После активации деньги зачисляются на счет получателя.
 - Каждый сертификат может быть активирован только один раз.
+- для получения кода активации покупатель должен открыть pdf файл с сертификатом в лично кабинете
+- при каждом открытии pdf код активации обновляется
+- одновременно у одного сертификата может быть до 20 кодов активации
 
 Твоя единственная задача:
 — определить user_id пользователя, который активировал сертификат,
@@ -132,7 +144,7 @@ func main() {
 - Единственная задача — определить user_id активатора по ключу сертификата.`
 		})
 
-	routerAgent := agent.NewAgent[struct{}](&routerMockLLM{}).
+	routerAgent := agent.NewAgent[struct{}](llm).
 		WithController(simple.New[struct{}]()).
 		WithMemory(buffer.New(5)).
 		WithPromptFunc(func(ctx context.Context, state *struct{}) string {
@@ -206,14 +218,18 @@ confidence должен быть в диапазоне [0.0, 1.0].`
 	g.SetEntry("llm_router")
 
 	examples := []string{
-		"Нужен user id по ключу активации сертификата CERT-ABC-123",
-		"У меня не работает оплата, что делать?",
-		"Подскажи user id по сертификату", // no key -> specialist asks for key
-		"Получатель 32674527\nДаритель неизвестен кл\nE6Y7-XXXX-KNNH-FFFS где активирован?",
-		"303279571\nAAAA-BBWS-RVSL-FCEE\nF2ER-X3Z8-QNETH-SDFS\nгде актвированы?",
-		"45801172\nОбратился даритель\nXLLE-DU9M-62BS-ASDD\nПолучатель 6217881\nУ получателя активировать не получилось, но у дарителя отображается как активированный.",
-		"Лк 26133762\nНомер сертификата: YVFT-KG8W-GSDD-KEQE\nНомер сертификата: 7B9E-ASDW-9L55-SF7U\nВопрос/ошибка: сертификаты уже активированы, обращается даритель.\nГде были активированы?",
-		"ЛК 41342546\nКод активации : DDDA-PE26-8J9K-9G9B\nКлиент не знает номер дарителя, при активации сертификата ошибка, что он уже активирован\nПодскажите, пожалуйста, можем ли проверить, где был ранее активирован сертификат?",
+		//"Нужен user id по ключу активации сертификата CERT-ABC-123",
+		//"У меня не работает оплата, что делать?",
+		//"Подскажи user id по сертификату", // no key -> specialist asks for key
+		//"Получатель 32674527\nДаритель неизвестен кл\nE6Y7-XXXX-KNNH-FFFS где активирован?",
+		//"303279571\nAAAA-BBWS-RVSL-FCEE\nF2ER-X3Z8-QNETH-SDFS\nгде актвированы?",
+		//"45801172\nОбратился даритель\nXLLE-DU9M-62BS-ASDD\nПолучатель 6217881\nУ получателя активировать не получилось, но у дарителя отображается как активированный.",
+		//"Лк 26133762\nНомер сертификата: YVFT-KG8W-GSDD-KEQE\nНомер сертификата: 7B9E-ASDW-9L55-SF7U\nВопрос/ошибка: сертификаты уже активированы, обращается даритель.\nГде были активированы?",
+		//"ЛК 41342546\nКод активации : DDDA-PE26-8J9K-9G9B\nКлиент не знает номер дарителя, при активации сертификата ошибка, что он уже активирован\nПодскажите, пожалуйста, можем ли проверить, где был ранее активирован сертификат?",
+		"лк 123559674\nошибка при активации сертификата-уже активирован\nномер телефона дарителя не может уточнить\nE9PN-8PPU-AWU4-MHTV\nможем проверить?",
+		"лк 37707823\nXCPX-BJ8F-6QSE-XYKJ\nМожно проверить где активирован? Номер дарителя не знает. ",
+		"104448657 \nMQVW-XJTX-5433-PF3T\n\nгде активированЮ?",
+		"15325349\n845Q-XPU5-KYKQ-YH32\nможем уточнить где активирован, номер дарителя кл-т не знает, на работе дарили",
 	}
 
 	ctx := context.Background()
@@ -229,50 +245,6 @@ confidence должен быть в диапазоне [0.0, 1.0].`
 		fmt.Printf("    intent: %s (%s)\n", result.Intent, result.RouteReason)
 		fmt.Printf("    A: %s\n\n", result.Reply)
 	}
-}
-
-func classifyIntent(q string) (intent string, reason string) {
-	s := strings.ToLower(q)
-	keys := extractActivationKeys(q)
-
-	hasUserID := strings.Contains(s, "user id") ||
-		strings.Contains(s, "userid") ||
-		strings.Contains(s, "юзер") ||
-		strings.Contains(s, "пользовател")
-
-	hasCert := strings.Contains(s, "сертифик") ||
-		strings.Contains(s, "certificate") ||
-		strings.Contains(s, "cert")
-
-	hasActivationKey := strings.Contains(s, "ключ") ||
-		strings.Contains(s, "activation key") ||
-		strings.Contains(s, "activation")
-
-	hasActivationContext := strings.Contains(s, "активир") ||
-		strings.Contains(s, "активац") ||
-		strings.Contains(s, "актвир") ||
-		strings.Contains(s, "дарител") ||
-		strings.Contains(s, "получател") ||
-		strings.Contains(s, "код") ||
-		strings.Contains(s, "where activated")
-
-	if len(keys) > 0 && (hasCert || hasActivationContext || hasActivationKey || hasUserID) {
-		return intentCertUserID, "activation key detected in support context"
-	}
-
-	if hasUserID && hasCert && hasActivationKey {
-		return intentCertUserID, "matched certificate user_id lookup pattern"
-	}
-
-	if hasUserID && hasCert {
-		return intentCertUserID, "matched certificate+user_id pattern"
-	}
-
-	if hasCert && hasActivationContext {
-		return intentCertUserID, "matched activation investigation pattern"
-	}
-
-	return intentManual, "out of specialist scope"
 }
 
 func parseRouterDecision(raw string) (RouterDecision, error) {
@@ -305,9 +277,6 @@ func parseRouterDecision(raw string) (RouterDecision, error) {
 	return d, nil
 }
 
-var certLikeKeyRegexp = regexp.MustCompile(`(?i)\b[a-z0-9]{4}(?:-[a-z0-9]{4}){3}\b`)
-var legacyKeyRegexp = regexp.MustCompile(`(?i)\bcert-[a-z0-9-]+\b`)
-
 type CertLookupInput struct {
 	ActivationKey string `json:"activation_key"`
 }
@@ -324,8 +293,8 @@ func mockGetUserIDByCertActivationKey(ctx context.Context, in CertLookupInput) (
 	}
 
 	db := map[string]string{
-		"CERT-ABC-123": "user_1001",
-		"CERT-XYZ-777": "user_2042",
+		"CERT-ABC-123":        "user_1001",
+		"7B9E-ASDW-9L55-SF7U": "user_2042",
 	}
 	_ = db
 
@@ -337,169 +306,19 @@ func mockGetUserIDByCertActivationKey(ctx context.Context, in CertLookupInput) (
 	//	}, nil
 	//}
 
-	uid := strconv.Itoa(rand.Int())
+	s := rand.Intn(8)
+	if s == 1 {
+		return CertLookupOutput{
+			ActivationKey: in.ActivationKey,
+			Found:         false,
+		}, nil
+	}
+
+	uid := strconv.Itoa(rand.Intn(300_000_000))
 
 	return CertLookupOutput{
 		ActivationKey: in.ActivationKey,
 		UserID:        uid,
 		Found:         true,
 	}, nil
-}
-
-type specialistMockLLM struct{}
-
-type routerMockLLM struct{}
-
-func (m *routerMockLLM) Generate(ctx context.Context, req llm.Request) (*llm.Response, error) {
-	msgs := req.Messages
-	if len(msgs) == 0 {
-		decision, _ := json.Marshal(RouterDecision{
-			Intent:     intentManual,
-			Reason:     "empty conversation",
-			Confidence: 0.1,
-		})
-		return &llm.Response{Text: string(decision)}, nil
-	}
-
-	question := msgs[len(msgs)-1].Content
-	intent, reason := classifyIntent(question)
-
-	confidence := 0.9
-	if intent == intentManual {
-		confidence = 0.7
-	}
-
-	decision, _ := json.Marshal(RouterDecision{
-		Intent:     intent,
-		Reason:     reason,
-		Confidence: confidence,
-	})
-
-	return &llm.Response{Text: string(decision)}, nil
-}
-
-func (m *specialistMockLLM) Generate(ctx context.Context, req llm.Request) (*llm.Response, error) {
-	msgs := req.Messages
-	if len(msgs) == 0 {
-		return &llm.Response{Text: ""}, nil
-	}
-
-	last := msgs[len(msgs)-1]
-	if last.Role == schema.RoleTool {
-		responses := collectTrailingToolOutputs(msgs)
-		if len(responses) == 0 {
-			return &llm.Response{Text: "Не удалось обработать ответ инструмента. Передаю оператору."}, nil
-		}
-
-		if len(responses) == 1 {
-			return &llm.Response{Text: responses[0]}, nil
-		}
-
-		return &llm.Response{Text: strings.Join(responses, "\n")}, nil
-	}
-
-	question := last.Content
-	keys := extractActivationKeys(question)
-	if len(keys) == 0 {
-		return &llm.Response{
-			Text: "Уточните, пожалуйста, код активации сертификата в формате AAAA-AAAA-AAAA-AAAA.",
-		}, nil
-	}
-
-	toolCalls := make([]schema.ToolCall, 0, len(keys))
-	for i, key := range keys {
-		args, _ := json.Marshal(CertLookupInput{ActivationKey: key})
-		toolCalls = append(toolCalls, schema.ToolCall{
-			ID:        fmt.Sprintf("call_cert_lookup_%d", i+1),
-			Name:      "get_user_id_by_cert_activation_key",
-			Arguments: args,
-		})
-	}
-
-	return &llm.Response{
-		ToolCalls: toolCalls,
-	}, nil
-}
-
-func extractActivationKeys(question string) []string {
-	matches := certLikeKeyRegexp.FindAllString(question, -1)
-	matches = append(matches, legacyKeyRegexp.FindAllString(question, -1)...)
-
-	if len(matches) == 0 {
-		return nil
-	}
-
-	seen := make(map[string]struct{}, len(matches))
-	keys := make([]string, 0, len(matches))
-	for _, match := range matches {
-		normalized := strings.ToUpper(strings.TrimSpace(match))
-		if normalized == "" {
-			continue
-		}
-		if _, exists := seen[normalized]; exists {
-			continue
-		}
-		seen[normalized] = struct{}{}
-		keys = append(keys, normalized)
-	}
-
-	return keys
-}
-
-func collectTrailingToolOutputs(msgs []schema.Message) []string {
-	outputs := make([]string, 0)
-	for i := len(msgs) - 1; i >= 0; i-- {
-		if msgs[i].Role != schema.RoleTool {
-			break
-		}
-
-		var envelope struct {
-			Status string          `json:"status"`
-			Output json.RawMessage `json:"output"`
-			Error  *struct {
-				Message string `json:"message"`
-			} `json:"error,omitempty"`
-		}
-
-		if err := json.Unmarshal([]byte(msgs[i].Content), &envelope); err != nil {
-			// Backward compatibility with legacy raw tool output format in examples.
-			var legacy CertLookupOutput
-			if legacyErr := json.Unmarshal([]byte(msgs[i].Content), &legacy); legacyErr != nil {
-				continue
-			}
-			if legacy.Found {
-				outputs = append(outputs, fmt.Sprintf("Ключ %s — активирован пользователем user_id: %s.", legacy.ActivationKey, legacy.UserID))
-				continue
-			}
-			outputs = append(outputs, fmt.Sprintf("Ключ %s — пользователь не найден. Могу передать запрос оператору.", legacy.ActivationKey))
-			continue
-		}
-
-		if envelope.Status == "error" {
-			if envelope.Error != nil && envelope.Error.Message != "" {
-				outputs = append(outputs, fmt.Sprintf("Ошибка при проверке сертификата: %s. Могу передать запрос оператору.", envelope.Error.Message))
-			} else {
-				outputs = append(outputs, "Ошибка при проверке сертификата. Могу передать запрос оператору.")
-			}
-			continue
-		}
-
-		var toolOut CertLookupOutput
-		if err := json.Unmarshal(envelope.Output, &toolOut); err != nil {
-			continue
-		}
-
-		if toolOut.Found {
-			outputs = append(outputs, fmt.Sprintf("Ключ %s — активирован пользователем user_id: %s.", toolOut.ActivationKey, toolOut.UserID))
-			continue
-		}
-
-		outputs = append(outputs, fmt.Sprintf("Ключ %s — пользователь не найден. Могу передать запрос оператору.", toolOut.ActivationKey))
-	}
-
-	for i, j := 0, len(outputs)-1; i < j; i, j = i+1, j-1 {
-		outputs[i], outputs[j] = outputs[j], outputs[i]
-	}
-
-	return outputs
 }
