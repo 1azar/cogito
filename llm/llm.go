@@ -23,9 +23,11 @@ type Request struct {
 }
 
 type Params struct {
-	Temperature *float64
-	MaxTokens   *int
-	Stop        []string
+	Temperature   *float64
+	TopP          *float64
+	RepeatPenalty *float64
+	MaxTokens     *int
+	Stop          []string
 }
 
 type ToolChoiceMode string

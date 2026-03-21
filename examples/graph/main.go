@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strings"
 
 	"github.com/1azar/cogito/agent"
 	"github.com/1azar/cogito/controller/react"
@@ -65,6 +66,7 @@ func supervisorExample() {
 
 	// Build workflow graph
 	g := workflow.NewGraph[*SharedState]()
+	attachWorkflowObserver(g)
 
 	// Add nodes
 	g.AddNode("manager", workflow.NewAgentNodeWithKey(
@@ -169,6 +171,7 @@ func sequentialWorkflowExample() {
 
 	// Build workflow graph
 	g := workflow.NewGraph[*SharedState]()
+	attachWorkflowObserver(g)
 
 	// Add nodes in sequence
 	g.AddNode("planner", workflow.NewAgentNodeWithField(
@@ -222,4 +225,24 @@ func sequentialWorkflowExample() {
 	fmt.Println("--- Workflow completed ---")
 	fmt.Printf("Final result: %s\n", result.Result)
 	fmt.Printf("Completed: %v\n", result.Completed)
+}
+
+func attachWorkflowObserver(g *workflow.Graph[*SharedState]) {
+	mode := strings.ToLower(strings.TrimSpace(os.Getenv("COGITO_WORKFLOW_OBS")))
+	if mode == "" || mode == "off" {
+		return
+	}
+
+	cfg := workflow.DefaultConfig()
+	switch mode {
+	case "1", "console":
+		cfg.Observer = workflow.NewConsoleObserver(os.Stdout)
+	case "tui":
+		cfg.Observer = workflow.NewTUIObserver(os.Stdout)
+	default:
+		log.Printf("unknown COGITO_WORKFLOW_OBS=%q (expected off|console|tui)", mode)
+		return
+	}
+
+	g.SetConfig(cfg)
 }

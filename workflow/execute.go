@@ -3,34 +3,47 @@ package workflow
 import (
 	"context"
 	"fmt"
+	"time"
 )
 
 // Run executes the workflow graph starting from the entry node
 func (g *Graph[T]) Run(ctx context.Context, initialState T) (T, error) {
+	g.mu.RLock()
+	observer := g.config.Observer
+	entry := g.entry
+	g.mu.RUnlock()
+
 	// Validate the graph before execution
 	if err := g.Validate(); err != nil {
 		var zero T
+		g.emitEvent(ctx, observer, Event{Type: EventWorkflowFailed, NodeID: entry, Err: err})
 		return zero, fmt.Errorf("graph validation failed: %w", err)
 	}
 
 	g.mu.RLock()
 	maxIterations := g.config.MaxIterations
 	errorHandler := g.config.ErrorHandler
+	observer = g.config.Observer
+	entry = g.entry
 	g.mu.RUnlock()
 
+	g.emitEvent(ctx, observer, Event{Type: EventWorkflowStarted, NodeID: entry})
+
 	state := initialState
-	currentNode := g.entry
+	currentNode := entry
 
 	for iteration := 0; iteration < maxIterations; iteration++ {
 		// Check for context cancellation
 		select {
 		case <-ctx.Done():
+			g.emitEvent(ctx, observer, Event{Type: EventWorkflowCanceled, NodeID: currentNode, Iteration: iteration, Err: ctx.Err()})
 			return state, fmt.Errorf("execution cancelled: %w", ctx.Err())
 		default:
 		}
 
 		// Check if we've reached the end
 		if currentNode == EndNode {
+			g.emitEvent(ctx, observer, Event{Type: EventWorkflowFinished, Iteration: iteration})
 			return state, nil
 		}
 
@@ -40,46 +53,104 @@ func (g *Graph[T]) Run(ctx context.Context, initialState T) (T, error) {
 		g.mu.RUnlock()
 
 		if !exists {
-			return state, fmt.Errorf("node '%s' not found", currentNode)
+			err := fmt.Errorf("node '%s' not found", currentNode)
+			g.emitEvent(ctx, observer, Event{Type: EventWorkflowFailed, NodeID: currentNode, Iteration: iteration, Err: err})
+			return state, err
 		}
+
+		startedAt := time.Now()
+		desc := node.Description()
+		g.emitEvent(ctx, observer, Event{
+			Type:            EventNodeStarted,
+			NodeID:          currentNode,
+			NodeDescription: desc,
+			Iteration:       iteration,
+			StartedAt:       startedAt,
+		})
 
 		// Execute the node
 		newState, err := node.Execute(ctx, state)
+		duration := time.Since(startedAt)
 		if err != nil {
+			g.emitEvent(ctx, observer, Event{
+				Type:            EventNodeFailed,
+				NodeID:          currentNode,
+				NodeDescription: desc,
+				Iteration:       iteration,
+				StartedAt:       startedAt,
+				Duration:        duration,
+				Err:             err,
+			})
+
 			if errorHandler != nil {
 				// Call error handler
 				handledState, handlerErr := errorHandler(currentNode, err, state)
 				if handlerErr != nil {
-					return state, fmt.Errorf("node '%s' error: %w (error handler also failed: %v)", currentNode, err, handlerErr)
+					resultErr := fmt.Errorf("node '%s' error: %w (error handler also failed: %v)", currentNode, err, handlerErr)
+					g.emitEvent(ctx, observer, Event{Type: EventWorkflowFailed, NodeID: currentNode, Iteration: iteration, Err: resultErr})
+					return state, resultErr
 				}
 				// Type assert the handled state back to T
 				var ok bool
 				state, ok = handledState.(T)
 				if !ok {
-					return state, fmt.Errorf("error handler returned invalid state type")
+					err := fmt.Errorf("error handler returned invalid state type")
+					g.emitEvent(ctx, observer, Event{Type: EventWorkflowFailed, NodeID: currentNode, Iteration: iteration, Err: err})
+					return state, err
 				}
 			} else {
-				return state, fmt.Errorf("node '%s' execution error: %w", currentNode, err)
+				resultErr := fmt.Errorf("node '%s' execution error: %w", currentNode, err)
+				g.emitEvent(ctx, observer, Event{Type: EventWorkflowFailed, NodeID: currentNode, Iteration: iteration, Err: resultErr})
+				return state, resultErr
 			}
 		} else {
+			g.emitEvent(ctx, observer, Event{
+				Type:            EventNodeFinished,
+				NodeID:          currentNode,
+				NodeDescription: desc,
+				Iteration:       iteration,
+				StartedAt:       startedAt,
+				Duration:        duration,
+			})
+
 			// Type assert the new state back to T
 			var ok bool
 			state, ok = newState.(T)
 			if !ok {
-				return state, fmt.Errorf("node execution returned invalid state type")
+				err := fmt.Errorf("node execution returned invalid state type")
+				g.emitEvent(ctx, observer, Event{Type: EventWorkflowFailed, NodeID: currentNode, Iteration: iteration, Err: err})
+				return state, err
 			}
 		}
 
 		// Find the next node
 		nextNode, err := g.findNextNode(currentNode, state)
 		if err != nil {
-			return state, fmt.Errorf("error finding next node from '%s': %w", currentNode, err)
+			resultErr := fmt.Errorf("error finding next node from '%s': %w", currentNode, err)
+			g.emitEvent(ctx, observer, Event{Type: EventWorkflowFailed, NodeID: currentNode, Iteration: iteration, Err: resultErr})
+			return state, resultErr
 		}
+
+		g.emitEvent(ctx, observer, Event{Type: EventEdgeEvaluated, NodeID: currentNode, NextNode: nextNode, Iteration: iteration})
 
 		currentNode = nextNode
 	}
 
-	return state, fmt.Errorf("max iterations (%d) exceeded, current node: %s", maxIterations, currentNode)
+	err := fmt.Errorf("max iterations (%d) exceeded, current node: %s", maxIterations, currentNode)
+	g.emitEvent(ctx, observer, Event{Type: EventWorkflowFailed, NodeID: currentNode, Err: err})
+	return state, err
+}
+
+func (g *Graph[T]) emitEvent(ctx context.Context, observer Observer, event Event) {
+	if observer == nil {
+		return
+	}
+
+	defer func() {
+		_ = recover()
+	}()
+
+	observer.OnEvent(ctx, event)
 }
 
 // findNextNode finds the next node based on edges from the current node

@@ -8,6 +8,7 @@ import (
 	"github.com/1azar/cogito/agent"
 	"github.com/1azar/cogito/controller/structured"
 	"github.com/1azar/cogito/llm"
+	"github.com/1azar/cogito/llm/ollama"
 )
 
 type State struct{}
@@ -20,7 +21,10 @@ type SupportTicket struct {
 }
 
 func main() {
-	model := &scriptedLLM{}
+	//	model := &scriptedLLM{}
+	model, err := ollama.New(ollama.Config{
+		Model: "gemma2:2b",
+	})
 
 	var out SupportTicket
 	ag := agent.NewAgent[State](model).

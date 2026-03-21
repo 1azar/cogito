@@ -77,6 +77,7 @@ Agent Core
 
 Provider Adapters
   ├─ openai
+  ├─ ollama
   └─ mock
 ```
 
@@ -99,14 +100,25 @@ Provider abstraction is centered on explicit request/response types:
   - `Messages []schema.Message`
   - `Tools []tool.Spec`
   - `ToolChoice llm.ToolChoice`
-  - `Params llm.Params` (`Temperature`, `MaxTokens`, `Stop`)
+  - `Params llm.Params` (`Temperature`, `TopP`, `RepeatPenalty`, `MaxTokens`, `Stop`)
 - `llm.Response`:
   - `Text string`
   - `ToolCalls []schema.ToolCall`
   - `FinishReason string`
   - `Raw any` (provider-specific payload for diagnostics)
 
-This keeps provider-specific wire formats inside adapters (e.g. `llm/openai`) and out of business logic.
+This keeps provider-specific wire formats inside adapters (e.g. `llm/openai`, `llm/ollama`) and out of business logic.
+
+Runtime params can be overridden per call via context:
+
+```go
+temp := 0.2
+topP := 0.9
+ctx = llm.WithParams(ctx, llm.Params{
+	Temperature: &temp,
+	TopP:        &topP,
+})
+```
 
 ## Tool System
 
@@ -223,7 +235,29 @@ An `Agent[T]` wires the runtime pieces together:
 - `AddEdge(from, to)` for direct transitions
 - `AddConditionalEdge(from, router, targets)` for branching
 - `SetEntry(id)` to define start node
+- `SetConfig(config)` to tune execution (max iterations, error handler, observer)
 - `Run(ctx, state)` to execute until `workflow.EndNode`
+
+For opt-in workflow observability, attach an observer in config:
+
+```go
+cfg := workflow.DefaultConfig()
+cfg.Observer = workflow.NewTUIObserver(os.Stdout) // or NewConsoleObserver
+
+g.SetConfig(cfg)
+```
+
+When `Observer` is nil (default), no workflow events are emitted.
+
+Try the dedicated observability example:
+
+```bash
+# plain event logs
+COGITO_WORKFLOW_OBS=console go run ./examples/observability
+
+# animated terminal output
+COGITO_WORKFLOW_OBS=tui go run ./examples/observability
+```
 
 For agent nodes, use factory helpers:
 
@@ -236,6 +270,7 @@ For agent nodes, use factory helpers:
 The most complete example is:
 
 - `examples/full_framework/main.go`
+- `examples/dynamic_params/main.go` (context-based per-call LLM params)
 
 It demonstrates in one flow:
 
@@ -260,7 +295,7 @@ go run ./examples/full_framework
 cogito/
 ├── agent/          # Agent[T] core and builder
 ├── controller/     # Behavior strategies (simple, react)
-├── llm/            # Provider abstraction + adapters (openai, mock)
+├── llm/            # Provider abstraction + adapters (openai, ollama, mock)
 ├── memory/         # Memory interfaces and implementations
 ├── schema/         # Shared message and tool-call schemas
 ├── tool/           # Tool declaration, registry, schema reflection
@@ -287,7 +322,7 @@ go run ./examples/full_framework
 
 ## Current Limitations
 
-- First-party provider adapters currently included: `openai`, `mock`.
+- First-party provider adapters currently included: `openai`, `ollama`, `mock`.
 - Streaming API is not yet implemented.
 - JSON schema validation covers the framework's supported subset, not the full JSON Schema spec.
 

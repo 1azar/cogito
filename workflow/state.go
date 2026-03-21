@@ -18,6 +18,8 @@ type GraphConfig struct {
 	// If it returns a non-nil error, execution stops.
 	// If it returns a modified state and nil error, execution continues.
 	ErrorHandler func(nodeID string, err error, state State) (State, error)
+	// Observer receives workflow lifecycle events. If nil, observability is disabled.
+	Observer Observer
 }
 
 // DefaultConfig returns a GraphConfig with sensible defaults
@@ -25,5 +27,6 @@ func DefaultConfig() GraphConfig {
 	return GraphConfig{
 		MaxIterations: 100,
 		ErrorHandler:  nil,
+		Observer:      nil,
 	}
 }

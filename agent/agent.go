@@ -61,7 +61,7 @@ func (a *Agent[T]) CallLLM(ctx context.Context, input string) (string, error) {
 
 	resp, err := a.llm.Generate(ctx, llm.Request{
 		Messages: msgs,
-		Params:   llm.Params{},
+		Params:   llm.ParamsFromContext(ctx),
 	})
 	if err != nil {
 		return "", err
@@ -149,7 +149,7 @@ func (a *Agent[T]) CallLLMWithTools(ctx context.Context, input string) (*control
 		ToolChoice: llm.ToolChoice{
 			Mode: llm.ToolChoiceAuto,
 		},
-		Params: llm.Params{},
+		Params: llm.ParamsFromContext(ctx),
 	})
 	if err != nil {
 		return nil, err

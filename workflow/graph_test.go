@@ -3,6 +3,7 @@ package workflow
 import (
 	"context"
 	"errors"
+	"reflect"
 	"testing"
 	"time"
 )
@@ -620,5 +621,88 @@ func TestFunctionNode(t *testing.T) {
 
 	if node.Description() != "Convenience test" {
 		t.Errorf("expected description 'Convenience test', got '%s'", node.Description())
+	}
+}
+
+func TestWorkflowObserverEventSequence(t *testing.T) {
+	g := NewGraph[*TestState]()
+
+	node := NewSimpleNode("only", func(ctx context.Context, state State) (State, error) {
+		s := state.(*TestState)
+		s.Counter++
+		return s, nil
+	}, "Single node")
+
+	events := make([]Event, 0)
+	cfg := DefaultConfig()
+	cfg.Observer = ObserverFunc(func(ctx context.Context, event Event) {
+		events = append(events, event)
+	})
+
+	g.AddNode("only", node).
+		AddEdge("only", EndNode).
+		SetEntry("only").
+		SetConfig(cfg)
+
+	_, err := g.Run(context.Background(), &TestState{})
+	if err != nil {
+		t.Fatalf("expected no error, got: %v", err)
+	}
+
+	gotTypes := make([]EventType, 0, len(events))
+	for _, event := range events {
+		gotTypes = append(gotTypes, event.Type)
+	}
+
+	wantTypes := []EventType{
+		EventWorkflowStarted,
+		EventNodeStarted,
+		EventNodeFinished,
+		EventEdgeEvaluated,
+		EventWorkflowFinished,
+	}
+
+	if !reflect.DeepEqual(gotTypes, wantTypes) {
+		t.Fatalf("unexpected event sequence: got %v, want %v", gotTypes, wantTypes)
+	}
+
+	if events[1].NodeID != "only" {
+		t.Fatalf("expected node id 'only', got '%s'", events[1].NodeID)
+	}
+	if events[3].NextNode != EndNode {
+		t.Fatalf("expected next node '%s', got '%s'", EndNode, events[3].NextNode)
+	}
+}
+
+func TestWorkflowObserverOnFailure(t *testing.T) {
+	g := NewGraph[*TestState]()
+
+	nodeErr := errors.New("boom")
+	node := NewSimpleNode("fails", func(ctx context.Context, state State) (State, error) {
+		return state, nodeErr
+	}, "Failing node")
+
+	events := make([]Event, 0)
+	cfg := DefaultConfig()
+	cfg.Observer = ObserverFunc(func(ctx context.Context, event Event) {
+		events = append(events, event)
+	})
+
+	g.AddNode("fails", node).
+		AddEdge("fails", EndNode).
+		SetEntry("fails").
+		SetConfig(cfg)
+
+	_, err := g.Run(context.Background(), &TestState{})
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+
+	if len(events) < 4 {
+		t.Fatalf("expected at least 4 events, got %d", len(events))
+	}
+
+	if events[0].Type != EventWorkflowStarted || events[1].Type != EventNodeStarted || events[2].Type != EventNodeFailed || events[3].Type != EventWorkflowFailed {
+		t.Fatalf("unexpected first events on failure: %v", []EventType{events[0].Type, events[1].Type, events[2].Type, events[3].Type})
 	}
 }
