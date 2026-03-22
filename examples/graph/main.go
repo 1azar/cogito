@@ -69,7 +69,7 @@ func supervisorExample() {
 	attachWorkflowObserver(g)
 
 	// Add nodes
-	g.AddNode("manager", workflow.NewAgentNodeWithKey(
+	g.AddNode(workflow.NewAgentNodeWithKey(
 		"manager",
 		managerAgent,
 		"task",     // input key
@@ -77,7 +77,7 @@ func supervisorExample() {
 		"Supervisor decides next action",
 	))
 
-	g.AddNode("researcher", workflow.NewAgentNodeWithKey(
+	g.AddNode(workflow.NewAgentNodeWithKey(
 		"researcher",
 		researcherAgent,
 		"query",
@@ -85,7 +85,7 @@ func supervisorExample() {
 		"Researcher investigates",
 	))
 
-	g.AddNode("coder", workflow.NewAgentNodeWithKey(
+	g.AddNode(workflow.NewAgentNodeWithKey(
 		"coder",
 		coderAgent,
 		"query",
@@ -174,7 +174,7 @@ func sequentialWorkflowExample() {
 	attachWorkflowObserver(g)
 
 	// Add nodes in sequence
-	g.AddNode("planner", workflow.NewAgentNodeWithField(
+	g.AddNode(workflow.NewAgentNodeWithField(
 		"planner",
 		plannerAgent,
 		func(s *SharedState) string { return s.Task },
@@ -182,7 +182,7 @@ func sequentialWorkflowExample() {
 		"Plan the task",
 	))
 
-	g.AddNode("executor", workflow.NewAgentNodeWithField(
+	g.AddNode(workflow.NewAgentNodeWithField(
 		"executor",
 		executorAgent,
 		func(s *SharedState) string { return s.Result }, // Use planner's output as input
@@ -190,7 +190,7 @@ func sequentialWorkflowExample() {
 		"Execute the plan",
 	))
 
-	g.AddNode("reviewer", workflow.NewAgentNodeWithField(
+	g.AddNode(workflow.NewAgentNodeWithField(
 		"reviewer",
 		reviewerAgent,
 		func(s *SharedState) string { return s.Result }, // Use executor's output as input

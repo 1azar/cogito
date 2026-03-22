@@ -51,9 +51,9 @@ func TestSimpleLinearGraph(t *testing.T) {
 	)
 
 	// Build graph: increment -> setValue -> doubleIt -> END
-	g.AddNode("increment", increment).
-		AddNode("setValue", setValue).
-		AddNode("doubleIt", doubleIt).
+	g.AddNode(increment).
+		AddNode(setValue).
+		AddNode(doubleIt).
 		AddEdge("increment", "setValue").
 		AddEdge("setValue", "doubleIt").
 		AddEdge("doubleIt", EndNode).
@@ -113,9 +113,9 @@ func TestConditionalRouting(t *testing.T) {
 	)
 
 	// Build graph with conditional routing
-	g.AddNode("decide", decide).
-		AddNode("low", lowPath).
-		AddNode("high", highPath).
+	g.AddNode(decide).
+		AddNode(lowPath).
+		AddNode(highPath).
 		AddConditionalEdge("decide", func(s *TestState) (string, error) {
 			if s.Counter < 5 {
 				return "low", nil
@@ -181,7 +181,7 @@ func TestMaxIterations(t *testing.T) {
 		"Loop node",
 	)
 
-	g.AddNode("loop", loopNode).
+	g.AddNode(loopNode).
 		AddEdge("loop", "loop"). // Self-loop
 		SetEntry("loop")
 
@@ -217,7 +217,7 @@ func TestInvalidGraph(t *testing.T) {
 				node := NewSimpleNode("node1", func(ctx context.Context, state State) (State, error) {
 					return state, nil
 				}, "Test node")
-				g.AddNode("node1", node).AddEdge("node1", EndNode)
+				g.AddNode(node).AddEdge("node1", EndNode)
 				return g
 			},
 			wantErr: "graph validation failed: entry node not set",
@@ -229,7 +229,7 @@ func TestInvalidGraph(t *testing.T) {
 				node := NewSimpleNode("node1", func(ctx context.Context, state State) (State, error) {
 					return state, nil
 				}, "Test node")
-				g.AddNode("node1", node).SetEntry("nonexistent")
+				g.AddNode(node).SetEntry("nonexistent")
 				return g
 			},
 			wantErr: "graph validation failed: entry node 'nonexistent' does not exist",
@@ -250,7 +250,7 @@ func TestInvalidGraph(t *testing.T) {
 				node := NewSimpleNode("node1", func(ctx context.Context, state State) (State, error) {
 					return state, nil
 				}, "Test node")
-				g.AddNode("node1", node).
+				g.AddNode(node).
 					AddEdge("node1", "nonexistent").
 					SetEntry("node1")
 				return g
@@ -293,7 +293,7 @@ func TestContextCancellation(t *testing.T) {
 		"Slow node",
 	)
 
-	g.AddNode("slow", slowNode).
+	g.AddNode(slowNode).
 		AddEdge("slow", "slow").
 		SetEntry("slow")
 
@@ -342,8 +342,8 @@ func TestGraphBuilder(t *testing.T) {
 
 	// Test chaining
 	result := g.
-		AddNode("node1", node1).
-		AddNode("node2", node2).
+		AddNode(node1).
+		AddNode(node2).
 		AddEdge("node1", "node2").
 		AddEdge("node2", EndNode).
 		SetEntry("node1").
@@ -398,7 +398,7 @@ func TestErrorHandler(t *testing.T) {
 		return s, nil
 	}
 
-	g.AddNode("errorNode", errorNode).
+	g.AddNode(errorNode).
 		AddEdge("errorNode", EndNode).
 		SetEntry("errorNode").
 		SetConfig(GraphConfig{
@@ -446,7 +446,7 @@ func TestErrorHandlerError(t *testing.T) {
 		return state, errors.New("handler error")
 	}
 
-	g.AddNode("errorNode", errorNode).
+	g.AddNode(errorNode).
 		AddEdge("errorNode", EndNode).
 		SetEntry("errorNode").
 		SetConfig(GraphConfig{
@@ -494,7 +494,7 @@ func TestConditionalEdgeWithInvalidDecision(t *testing.T) {
 		return state, nil
 	}, "Node 1")
 
-	g.AddNode("node1", node1).
+	g.AddNode(node1).
 		AddConditionalEdge("node1", func(s *TestState) (string, error) {
 			return "invalid", nil
 		}, map[string]string{
@@ -522,7 +522,7 @@ func TestConditionalEdgeWithRouterError(t *testing.T) {
 		return state, nil
 	}, "Node 1")
 
-	g.AddNode("node1", node1).
+	g.AddNode(node1).
 		AddConditionalEdge("node1", func(s *TestState) (string, error) {
 			return "", errors.New("router error")
 		}, map[string]string{
@@ -552,7 +552,7 @@ func TestNoEdgesToEndNode(t *testing.T) {
 		return s, nil
 	}, "Node 1")
 
-	g.AddNode("node1", node1).
+	g.AddNode(node1).
 		SetEntry("node1")
 
 	ctx := context.Background()
@@ -576,22 +576,7 @@ func TestPanicOnNilNode(t *testing.T) {
 	}()
 
 	g := NewGraph[*TestState]()
-	g.AddNode("test", nil)
-}
-
-// TestPanicOnNodeIDMismatch tests that node ID mismatch panics
-func TestPanicOnNodeIDMismatch(t *testing.T) {
-	defer func() {
-		if r := recover(); r == nil {
-			t.Error("expected panic on node ID mismatch, got none")
-		}
-	}()
-
-	g := NewGraph[*TestState]()
-	node := NewSimpleNode("actualID", func(ctx context.Context, state State) (State, error) {
-		return state, nil
-	}, "Test")
-	g.AddNode("differentID", node)
+	g.AddNode(nil)
 }
 
 // TestPanicOnDuplicateNode tests that adding duplicate node panics
@@ -606,7 +591,7 @@ func TestPanicOnDuplicateNode(t *testing.T) {
 	node := NewSimpleNode("test", func(ctx context.Context, state State) (State, error) {
 		return state, nil
 	}, "Test")
-	g.AddNode("test", node).AddNode("test", node)
+	g.AddNode(node).AddNode(node)
 }
 
 // TestFunctionNode tests the FunctionNode convenience function
@@ -639,7 +624,7 @@ func TestWorkflowObserverEventSequence(t *testing.T) {
 		events = append(events, event)
 	})
 
-	g.AddNode("only", node).
+	g.AddNode(node).
 		AddEdge("only", EndNode).
 		SetEntry("only").
 		SetConfig(cfg)
@@ -688,7 +673,7 @@ func TestWorkflowObserverOnFailure(t *testing.T) {
 		events = append(events, event)
 	})
 
-	g.AddNode("fails", node).
+	g.AddNode(node).
 		AddEdge("fails", EndNode).
 		SetEntry("fails").
 		SetConfig(cfg)

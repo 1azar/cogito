@@ -67,7 +67,7 @@ func TestAgentNodeInWorkflow(t *testing.T) {
 
 	g := NewGraph[map[string]string]()
 
-	g.AddNode("agent", NewAgentNodeWithKey(
+	g.AddNode(NewAgentNodeWithKey(
 		"agent",
 		agt,
 		"input",
@@ -142,7 +142,7 @@ func TestAgentNodeWithFieldInWorkflow(t *testing.T) {
 
 	g := NewGraph[*WorkflowState]()
 
-	g.AddNode("agent", NewAgentNodeWithField(
+	g.AddNode(NewAgentNodeWithField(
 		"agent",
 		agt,
 		func(s *WorkflowState) string { return s.Task },
@@ -526,7 +526,7 @@ func TestMultiAgentSequentialWorkflow(t *testing.T) {
 
 	g := NewGraph[*WorkflowState]()
 
-	g.AddNode("planner", NewAgentNodeWithField(
+	g.AddNode(NewAgentNodeWithField(
 		"planner",
 		plannerAgent,
 		func(s *WorkflowState) string { return s.Task },
@@ -534,7 +534,7 @@ func TestMultiAgentSequentialWorkflow(t *testing.T) {
 		"Planner",
 	))
 
-	g.AddNode("coder", NewAgentNodeWithField(
+	g.AddNode(NewAgentNodeWithField(
 		"coder",
 		coderAgent,
 		func(s *WorkflowState) string { return s.Plan },
@@ -542,7 +542,7 @@ func TestMultiAgentSequentialWorkflow(t *testing.T) {
 		"Coder",
 	))
 
-	g.AddNode("reviewer", NewAgentNodeWithField(
+	g.AddNode(NewAgentNodeWithField(
 		"reviewer",
 		reviewerAgent,
 		func(s *WorkflowState) string { return s.Code },

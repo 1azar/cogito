@@ -16,7 +16,7 @@ func Example_manualVerification() {
 	g := NewGraph[*CounterState]()
 
 	// Add an increment node
-	g.AddNode("increment", FunctionNode(
+	g.AddNode(FunctionNode(
 		"increment",
 		func(ctx context.Context, st State) (State, error) {
 			s := st.(*CounterState)
@@ -94,9 +94,9 @@ func Example_conditionalRouting() {
 		"Reject order",
 	)
 
-	g.AddNode("calcDiscount", calcDiscount).
-		AddNode("approve", approve).
-		AddNode("reject", reject).
+	g.AddNode(calcDiscount).
+		AddNode(approve).
+		AddNode(reject).
 		AddConditionalEdge("calcDiscount", func(s *OrderState) (string, error) {
 			if s.Total >= 50 {
 				return "approve", nil

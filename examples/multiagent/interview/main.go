@@ -69,7 +69,7 @@ Show enthusiasm and ask for clarification if needed.`
 	g := workflow.NewGraph[*InterviewState]()
 
 	// Interviewer asks a question
-	g.AddNode("interviewer", workflow.NewAgentNodeWithField(
+	g.AddNode(workflow.NewAgentNodeWithField(
 		"interviewer",
 		interviewerAgent,
 		func(s *InterviewState) string {
@@ -94,7 +94,7 @@ Show enthusiasm and ask for clarification if needed.`
 	))
 
 	// Candidate answers
-	g.AddNode("candidate", workflow.NewAgentNodeWithField(
+	g.AddNode(workflow.NewAgentNodeWithField(
 		"candidate",
 		candidateAgent,
 		func(s *InterviewState) string {

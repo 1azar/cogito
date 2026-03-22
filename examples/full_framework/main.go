@@ -110,7 +110,7 @@ func runScenario(ctx context.Context, input string) (*DemoState, error) {
 
 	g := workflow.NewGraph[*DemoState]()
 
-	g.AddNode("router", workflow.NewAgentNodeWithField(
+	g.AddNode(workflow.NewAgentNodeWithField(
 		"router",
 		routerAgent,
 		func(s *DemoState) string { return s.Input },
@@ -127,7 +127,7 @@ func runScenario(ctx context.Context, input string) (*DemoState, error) {
 		"Router decides which agent should handle input",
 	))
 
-	g.AddNode("specialist", workflow.NewAgentNodeWithField(
+	g.AddNode(workflow.NewAgentNodeWithField(
 		"specialist",
 		specialistAgent,
 		func(s *DemoState) string { return s.Input },
@@ -135,7 +135,7 @@ func runScenario(ctx context.Context, input string) (*DemoState, error) {
 		"ReAct specialist with tools",
 	))
 
-	g.AddNode("general", workflow.NewAgentNodeWithField(
+	g.AddNode(workflow.NewAgentNodeWithField(
 		"general",
 		generalAgent,
 		func(s *DemoState) string { return s.Input },

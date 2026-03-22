@@ -72,7 +72,7 @@ Respond with only: "proponent" or "opponent" based on who argued better.`
 	g := workflow.NewGraph[*DebateState]()
 
 	// Proponent node
-	g.AddNode("proponent", workflow.NewAgentNodeWithField(
+	g.AddNode(workflow.NewAgentNodeWithField(
 		"proponent",
 		proponentAgent,
 		func(s *DebateState) string {
@@ -89,7 +89,7 @@ Respond with only: "proponent" or "opponent" based on who argued better.`
 	))
 
 	// Opponent node
-	g.AddNode("opponent", workflow.NewAgentNodeWithField(
+	g.AddNode(workflow.NewAgentNodeWithField(
 		"opponent",
 		opponentAgent,
 		func(s *DebateState) string {
@@ -103,7 +103,7 @@ Respond with only: "proponent" or "opponent" based on who argued better.`
 	))
 
 	// Judge node
-	g.AddNode("judge", workflow.NewAgentNodeWithField(
+	g.AddNode(workflow.NewAgentNodeWithField(
 		"judge",
 		judgeAgent,
 		func(s *DebateState) string {

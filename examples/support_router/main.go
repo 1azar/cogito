@@ -162,7 +162,7 @@ confidence должен быть в диапазоне [0.0, 1.0].`
 
 	g := workflow.NewGraph[*SupportState]()
 
-	g.AddNode("llm_router", workflow.NewAgentNode(
+	g.AddNode(workflow.NewAgentNode(
 		"llm_router",
 		routerAgent,
 		func(st workflow.State) (string, error) {
@@ -185,7 +185,7 @@ confidence должен быть в диапазоне [0.0, 1.0].`
 		"LLM router chooses specialist intent",
 	))
 
-	g.AddNode("cert_uid_specialist", workflow.NewAgentNodeWithField(
+	g.AddNode(workflow.NewAgentNodeWithField(
 		"cert_uid_specialist",
 		specialistAgent,
 		func(s *SupportState) string { return s.UserQuestion },
@@ -193,7 +193,7 @@ confidence должен быть в диапазоне [0.0, 1.0].`
 		"Specialist: user id by certificate activation key",
 	))
 
-	g.AddNode("manual_fallback", workflow.FunctionNode(
+	g.AddNode(workflow.FunctionNode(
 		"manual_fallback",
 		func(ctx context.Context, st workflow.State) (workflow.State, error) {
 			s := st.(*SupportState)

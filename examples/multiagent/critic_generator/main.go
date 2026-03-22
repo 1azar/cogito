@@ -83,7 +83,7 @@ Otherwise, explain what needs improvement.`
 	g := workflow.NewGraph[*IterationState]()
 
 	// Generator creates or improves content
-	g.AddNode("generator", workflow.NewAgentNodeWithField(
+	g.AddNode(workflow.NewAgentNodeWithField(
 		"generator",
 		generatorAgent,
 		func(s *IterationState) string {
@@ -100,7 +100,7 @@ Otherwise, explain what needs improvement.`
 	))
 
 	// Critic reviews the content
-	g.AddNode("critic", workflow.NewAgentNodeWithField(
+	g.AddNode(workflow.NewAgentNodeWithField(
 		"critic",
 		criticAgent,
 		func(s *IterationState) string {

@@ -25,15 +25,16 @@ func NewGraph[T State]() *Graph[T] {
 }
 
 // AddNode adds a node to the graph
-func (g *Graph[T]) AddNode(id string, node Node) *Graph[T] {
+func (g *Graph[T]) AddNode(node Node) *Graph[T] {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 
 	if node == nil {
 		panic("cannot add nil node")
 	}
-	if node.ID() != id {
-		panic("node id mismatch: provided id '" + id + "' does not match node.ID() '" + node.ID() + "'")
+	id := node.ID()
+	if id == "" {
+		panic("node id cannot be empty")
 	}
 	if _, exists := g.nodes[id]; exists {
 		panic("node with id '" + id + "' already exists")

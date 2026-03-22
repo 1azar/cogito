@@ -61,7 +61,7 @@ If the translation is excellent, respond with "APPROVED".`
 	g := workflow.NewGraph[*CollaborationState]()
 
 	// Translator creates or revises translation
-	g.AddNode("translator", workflow.NewAgentNodeWithField(
+	g.AddNode(workflow.NewAgentNodeWithField(
 		"translator",
 		translatorAgent,
 		func(s *CollaborationState) string {
@@ -78,7 +78,7 @@ If the translation is excellent, respond with "APPROVED".`
 	))
 
 	// Editor reviews the translation
-	g.AddNode("editor", workflow.NewAgentNodeWithField(
+	g.AddNode(workflow.NewAgentNodeWithField(
 		"editor",
 		editorAgent,
 		func(s *CollaborationState) string {

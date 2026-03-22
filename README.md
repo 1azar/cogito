@@ -231,7 +231,7 @@ An `Agent[T]` wires the runtime pieces together:
 
 `workflow.Graph[T]` lets you combine multiple nodes (agents or functions) into typed orchestration flows.
 
-- `AddNode(id, node)`
+- `AddNode(node)`
 - `AddEdge(from, to)` for direct transitions
 - `AddConditionalEdge(from, router, targets)` for branching
 - `SetEntry(id)` to define start node

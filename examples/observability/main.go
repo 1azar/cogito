@@ -26,7 +26,7 @@ func main() {
 	g := workflow.NewGraph[*DemoState]()
 	configureObservability(g)
 
-	g.AddNode("tokenize", workflow.FunctionNode(
+	g.AddNode(workflow.FunctionNode(
 		"tokenize",
 		func(ctx context.Context, st workflow.State) (workflow.State, error) {
 			s := st.(*DemoState)
@@ -42,7 +42,7 @@ func main() {
 		"Tokenize input and classify length",
 	))
 
-	g.AddNode("short", workflow.FunctionNode(
+	g.AddNode(workflow.FunctionNode(
 		"short",
 		func(ctx context.Context, st workflow.State) (workflow.State, error) {
 			s := st.(*DemoState)
@@ -53,7 +53,7 @@ func main() {
 		"Handle short requests",
 	))
 
-	g.AddNode("long", workflow.FunctionNode(
+	g.AddNode(workflow.FunctionNode(
 		"long",
 		func(ctx context.Context, st workflow.State) (workflow.State, error) {
 			s := st.(*DemoState)
