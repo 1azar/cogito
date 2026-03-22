@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/1azar/cogito/controller"
@@ -115,10 +116,15 @@ func (a *Agent[T]) CallLLM(ctx context.Context, input string) (string, error) {
 	msgs = appendUserMessage(msgs, input, true)
 	a.addUserToMemory(ctx, input)
 
-	resp, err := a.llm.Generate(ctx, llm.Request{
+	stream, err := a.llm.GenerateStream(ctx, llm.Request{
 		Messages: msgs,
 		Params:   llm.ParamsFromContext(ctx),
 	})
+	if err != nil {
+		return "", err
+	}
+
+	resp, err := a.collectStreamResponse(ctx, stream)
 	if err != nil {
 		return "", err
 	}
@@ -195,7 +201,7 @@ func (a *Agent[T]) CallLLMWithTools(ctx context.Context, input string) (*control
 	msgs = appendUserMessage(msgs, input, false)
 	a.addUserToMemory(ctx, input)
 
-	resp, err := a.llm.Generate(ctx, llm.Request{
+	stream, err := a.llm.GenerateStream(ctx, llm.Request{
 		Messages: msgs,
 		Tools:    a.tools.Specs(),
 		ToolChoice: llm.ToolChoice{
@@ -203,6 +209,11 @@ func (a *Agent[T]) CallLLMWithTools(ctx context.Context, input string) (*control
 		},
 		Params: llm.ParamsFromContext(ctx),
 	})
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := a.collectStreamResponse(ctx, stream)
 	if err != nil {
 		return nil, err
 	}
@@ -277,4 +288,53 @@ func (a *Agent[T]) publishEvent(ctx context.Context, event cogruntime.Event) {
 		event.SessionID = a.sessionID
 	}
 	a.eventBus.Publish(ctx, event)
+}
+
+func (a *Agent[T]) collectStreamResponse(ctx context.Context, stream llm.Stream) (*llm.Response, error) {
+	if stream == nil {
+		return nil, errors.New("llm stream is nil")
+	}
+
+	var textBuilder strings.Builder
+	usage := llm.Usage{}
+	var final *llm.Response
+
+	for evt := range stream {
+		switch evt.Type {
+		case llm.StreamEventTextDelta:
+			if evt.TextDelta != "" {
+				textBuilder.WriteString(evt.TextDelta)
+				a.publishEvent(ctx, cogruntime.Event{
+					Type:      cogruntime.EventLLMTextDelta,
+					Component: "agent",
+					Message:   evt.TextDelta,
+				})
+			}
+		case llm.StreamEventUsageDelta:
+			if evt.UsageDelta != nil {
+				usage = *evt.UsageDelta
+			}
+		case llm.StreamEventDone:
+			if evt.Response != nil {
+				final = evt.Response
+			}
+		case llm.StreamEventError:
+			if evt.Err != nil {
+				return nil, evt.Err
+			}
+			return nil, errors.New("unknown stream error")
+		}
+	}
+
+	if final == nil {
+		final = &llm.Response{}
+	}
+	if final.Text == "" {
+		final.Text = textBuilder.String()
+	}
+	if final.Usage.IsZero() && !usage.IsZero() {
+		final.Usage = usage
+	}
+
+	return final, nil
 }

@@ -81,16 +81,6 @@ func (c *Controller[T]) Run(ctx context.Context, agent controller.AgentLike[T], 
 			EstimatedCostMicros: completion.Usage.EstimatedCostMicros,
 		})
 
-		if completion.Text != "" {
-			publishEvent(stepCtx, cogruntime.Event{
-				Timestamp: time.Now(),
-				Type:      cogruntime.EventLLMTextDelta,
-				Component: "controller.react",
-				Step:      step,
-				Message:   completion.Text,
-			})
-		}
-
 		// If no tool calls were made, we have the final answer
 		if len(completion.ToolCalls) == 0 {
 			publishEvent(stepCtx, cogruntime.Event{
