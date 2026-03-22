@@ -54,10 +54,8 @@ func (a *Agent[T]) CallLLM(ctx context.Context, input string) (string, error) {
 		msgs = append(msgs, history...)
 	}
 
-	msgs = append(msgs, schema.Message{
-		Role:    schema.RoleUser,
-		Content: input,
-	})
+	msgs = appendUserMessage(msgs, input, true)
+	a.addUserToMemory(ctx, input)
 
 	resp, err := a.llm.Generate(ctx, llm.Request{
 		Messages: msgs,
@@ -128,20 +126,8 @@ func (a *Agent[T]) CallLLMWithTools(ctx context.Context, input string) (*control
 		msgs = append(msgs, history...)
 	}
 
-	// Only add user message if input is not empty (first iteration)
-	if input != "" {
-		msgs = append(msgs, schema.Message{
-			Role:    schema.RoleUser,
-			Content: input,
-		})
-		// Also add to memory
-		if a.memory != nil {
-			_ = a.memory.Add(ctx, schema.Message{
-				Role:    schema.RoleUser,
-				Content: input,
-			})
-		}
-	}
+	msgs = appendUserMessage(msgs, input, false)
+	a.addUserToMemory(ctx, input)
 
 	resp, err := a.llm.Generate(ctx, llm.Request{
 		Messages: msgs,
@@ -178,6 +164,26 @@ func (a *Agent[T]) ClearMemory() error {
 		return a.memory.Clear()
 	}
 	return nil
+}
+
+func appendUserMessage(msgs []schema.Message, input string, allowEmpty bool) []schema.Message {
+	if !allowEmpty && input == "" {
+		return msgs
+	}
+
+	return append(msgs, schema.Message{
+		Role:    schema.RoleUser,
+		Content: input,
+	})
+}
+
+func (a *Agent[T]) addUserToMemory(ctx context.Context, input string) {
+	if a.memory != nil && input != "" {
+		_ = a.memory.Add(ctx, schema.Message{
+			Role:    schema.RoleUser,
+			Content: input,
+		})
+	}
 }
 
 func mustMarshalToolResult(result toolruntime.Result) string {
