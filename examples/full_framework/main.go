@@ -190,6 +190,15 @@ func (m *routerLLM) Generate(ctx context.Context, req llm.Request) (*llm.Respons
 	return &llm.Response{Text: string(body)}, nil
 }
 
+func (m *routerLLM) GenerateStream(ctx context.Context, req llm.Request) (llm.Stream, error) {
+	resp, err := m.Generate(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+
+	return llm.StreamFromResponse(resp), nil
+}
+
 func (m *generalLLM) Generate(ctx context.Context, req llm.Request) (*llm.Response, error) {
 	if len(req.Messages) == 0 {
 		return &llm.Response{Text: "General fallback: no input provided."}, nil
@@ -199,6 +208,15 @@ func (m *generalLLM) Generate(ctx context.Context, req llm.Request) (*llm.Respon
 		Text: "General fallback answer: Cogito is a modular Go framework for LLM agents and orchestration.",
 		Raw:  last.Content,
 	}, nil
+}
+
+func (m *generalLLM) GenerateStream(ctx context.Context, req llm.Request) (llm.Stream, error) {
+	resp, err := m.Generate(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+
+	return llm.StreamFromResponse(resp), nil
 }
 
 func (m *specialistLLM) Generate(ctx context.Context, req llm.Request) (*llm.Response, error) {
@@ -241,6 +259,15 @@ func (m *specialistLLM) Generate(ctx context.Context, req llm.Request) (*llm.Res
 	return &llm.Response{
 		ToolCalls: calls,
 	}, nil
+}
+
+func (m *specialistLLM) GenerateStream(ctx context.Context, req llm.Request) (llm.Stream, error) {
+	resp, err := m.Generate(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+
+	return llm.StreamFromResponse(resp), nil
 }
 
 func parseRouteDecision(raw string) (routeDecision, error) {

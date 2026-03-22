@@ -66,3 +66,12 @@ func (m *scriptedLLM) Generate(ctx context.Context, req llm.Request) (*llm.Respo
 		Text: "Fixed output:\n```json\n{\"category\":\"billing\",\"priority\":1,\"tags\":[\"payments\",\"eu\",\"incident\"],\"summary\":\"EU payments are failing after deploy\"}\n```",
 	}, nil
 }
+
+func (m *scriptedLLM) GenerateStream(ctx context.Context, req llm.Request) (llm.Stream, error) {
+	resp, err := m.Generate(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+
+	return llm.StreamFromResponse(resp), nil
+}

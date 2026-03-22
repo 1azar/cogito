@@ -64,6 +64,11 @@ type chatResponse struct {
 		} `json:"message"`
 		FinishReason string `json:"finish_reason"`
 	} `json:"choices"`
+	Usage *struct {
+		PromptTokens     int64 `json:"prompt_tokens"`
+		CompletionTokens int64 `json:"completion_tokens"`
+		TotalTokens      int64 `json:"total_tokens"`
+	} `json:"usage,omitempty"`
 
 	Error *struct {
 		Message string `json:"message"`
@@ -215,7 +220,25 @@ func (c *Client) Generate(ctx context.Context, req llm.Request) (*llm.Response, 
 		completion.ToolCalls = contentToolCalls
 	}
 
+	if out.Usage != nil {
+		completion.Usage = llm.Usage{
+			InputTokens:  out.Usage.PromptTokens,
+			OutputTokens: out.Usage.CompletionTokens,
+			TotalTokens:  out.Usage.TotalTokens,
+			Provider:     "ollama",
+		}
+	}
+
 	return completion, nil
+}
+
+func (c *Client) GenerateStream(ctx context.Context, req llm.Request) (llm.Stream, error) {
+	resp, err := c.Generate(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+
+	return llm.StreamFromResponse(resp), nil
 }
 
 func toSchemaToolCalls(calls []chatToolCall) []schema.ToolCall {

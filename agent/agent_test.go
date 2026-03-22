@@ -26,6 +26,15 @@ func (r *recordingLLM) Generate(_ context.Context, req llm.Request) (*llm.Respon
 	return resp, nil
 }
 
+func (r *recordingLLM) GenerateStream(ctx context.Context, req llm.Request) (llm.Stream, error) {
+	resp, err := r.Generate(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+
+	return llm.StreamFromResponse(resp), nil
+}
+
 func TestCallLLMStoresUserAndAssistantInMemory(t *testing.T) {
 	ctx := context.Background()
 	m := buffer.New(10)
