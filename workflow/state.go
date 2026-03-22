@@ -1,5 +1,7 @@
 package workflow
 
+import cogruntime "github.com/1azar/cogito/runtime"
+
 // State represents any workflow state - can be any type
 type State interface{}
 
@@ -20,6 +22,8 @@ type GraphConfig struct {
 	ErrorHandler func(nodeID string, err error, state State) (State, error)
 	// Observer receives workflow lifecycle events. If nil, observability is disabled.
 	Observer Observer
+	// EventBus receives normalized runtime events. If nil, no runtime events are emitted.
+	EventBus cogruntime.EventBus
 }
 
 // DefaultConfig returns a GraphConfig with sensible defaults
@@ -28,5 +32,6 @@ func DefaultConfig() GraphConfig {
 		MaxIterations: 100,
 		ErrorHandler:  nil,
 		Observer:      nil,
+		EventBus:      nil,
 	}
 }

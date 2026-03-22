@@ -4,10 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"time"
 
 	"github.com/1azar/cogito/controller"
 	"github.com/1azar/cogito/llm"
 	"github.com/1azar/cogito/memory"
+	cogruntime "github.com/1azar/cogito/runtime"
 	"github.com/1azar/cogito/schema"
 	"github.com/1azar/cogito/tool"
 	"github.com/1azar/cogito/toolruntime"
@@ -20,6 +22,9 @@ type Agent[T any] struct {
 	tools      *tool.Registry
 	executor   toolruntime.Executor
 	promptFunc PromptFunc[T]
+	runManager *cogruntime.Manager
+	eventBus   cogruntime.EventBus
+	sessionID  string
 
 	state T
 }
@@ -32,7 +37,59 @@ func (a *Agent[T]) Run(ctx context.Context, input string) (string, error) {
 		return "", errors.New("controller is nil")
 	}
 
-	return a.controller.Run(ctx, a, input)
+	if a.runManager == nil {
+		return a.controller.Run(ctx, a, input)
+	}
+
+	runCtx, run := a.runManager.Start(ctx, a.sessionID, input)
+	a.publishEvent(runCtx, cogruntime.Event{
+		Timestamp: time.Now(),
+		Type:      cogruntime.EventRunStarted,
+		RunID:     run.ID(),
+		SessionID: a.sessionID,
+		Component: "agent",
+	})
+
+	out, err := a.controller.Run(runCtx, a, input)
+	if err != nil {
+		if errors.Is(err, context.Canceled) || errors.Is(runCtx.Err(), context.Canceled) || errors.Is(runCtx.Err(), context.DeadlineExceeded) {
+			_ = a.runManager.Cancel(run.ID(), err)
+			a.publishEvent(runCtx, cogruntime.Event{
+				Timestamp: time.Now(),
+				Type:      cogruntime.EventRunCanceled,
+				RunID:     run.ID(),
+				SessionID: a.sessionID,
+				Component: "agent",
+				Err:       err,
+			})
+			return "", err
+		}
+
+		_ = a.runManager.Fail(run.ID(), err)
+		a.publishEvent(runCtx, cogruntime.Event{
+			Timestamp: time.Now(),
+			Type:      cogruntime.EventRunFailed,
+			RunID:     run.ID(),
+			SessionID: a.sessionID,
+			Component: "agent",
+			Err:       err,
+		})
+		return "", err
+	}
+
+	_ = a.runManager.Complete(run.ID())
+	snapshot := run.Snapshot()
+	a.publishEvent(runCtx, cogruntime.Event{
+		Timestamp: time.Now(),
+		Type:      cogruntime.EventRunFinished,
+		RunID:     run.ID(),
+		SessionID: a.sessionID,
+		Component: "agent",
+		Duration:  snapshot.Duration,
+	})
+
+	return out, nil
+
 }
 
 func (a *Agent[T]) CallLLM(ctx context.Context, input string) (string, error) {
@@ -85,6 +142,14 @@ func (a *Agent[T]) State() *T {
 
 func (a *Agent[T]) Tools() *tool.Registry {
 	return a.tools
+}
+
+func (a *Agent[T]) RunManager() *cogruntime.Manager {
+	return a.runManager
+}
+
+func (a *Agent[T]) EventBus() cogruntime.EventBus {
+	return a.eventBus
 }
 
 func (a *Agent[T]) RunToolCalls(ctx context.Context, calls []schema.ToolCall) ([]toolruntime.Result, error) {
@@ -192,4 +257,14 @@ func mustMarshalToolResult(result toolruntime.Result) string {
 		return `{"status":"error","error":{"code":"marshal_error","message":"failed to serialize tool result"}}`
 	}
 	return string(payload)
+}
+
+func (a *Agent[T]) publishEvent(ctx context.Context, event cogruntime.Event) {
+	if a.eventBus == nil {
+		return
+	}
+	if event.Timestamp.IsZero() {
+		event.Timestamp = time.Now()
+	}
+	a.eventBus.Publish(ctx, event)
 }
