@@ -3,6 +3,7 @@ package controller
 import (
 	"context"
 
+	"github.com/1azar/cogito/llm"
 	"github.com/1azar/cogito/schema"
 	"github.com/1azar/cogito/tool"
 	"github.com/1azar/cogito/toolruntime"
@@ -11,6 +12,7 @@ import (
 type Completion struct {
 	Text      string
 	ToolCalls []schema.ToolCall
+	Usage     llm.Usage
 }
 
 type AgentLike[T any] interface {

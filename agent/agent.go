@@ -42,6 +42,7 @@ func (a *Agent[T]) Run(ctx context.Context, input string) (string, error) {
 	}
 
 	runCtx, run := a.runManager.Start(ctx, a.sessionID, input)
+	runCtx = cogruntime.WithEventBus(runCtx, a.eventBus)
 	a.publishEvent(runCtx, cogruntime.Event{
 		Timestamp: time.Now(),
 		Type:      cogruntime.EventRunStarted,
@@ -220,6 +221,7 @@ func (a *Agent[T]) CallLLMWithTools(ctx context.Context, input string) (*control
 	return &controller.Completion{
 		Text:      resp.Text,
 		ToolCalls: resp.ToolCalls,
+		Usage:     resp.Usage,
 	}, nil
 }
 
@@ -265,6 +267,14 @@ func (a *Agent[T]) publishEvent(ctx context.Context, event cogruntime.Event) {
 	}
 	if event.Timestamp.IsZero() {
 		event.Timestamp = time.Now()
+	}
+	if event.RunID == "" {
+		if runID, ok := cogruntime.RunIDFromContext(ctx); ok {
+			event.RunID = runID
+		}
+	}
+	if event.SessionID == "" {
+		event.SessionID = a.sessionID
 	}
 	a.eventBus.Publish(ctx, event)
 }

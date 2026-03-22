@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	cogruntime "github.com/1azar/cogito/runtime"
 	"github.com/1azar/cogito/schema"
 	"github.com/1azar/cogito/tool"
 )
@@ -98,6 +99,14 @@ func (e *DefaultExecutor) Execute(ctx context.Context, calls []schema.ToolCall, 
 
 func (e *DefaultExecutor) executeCall(ctx context.Context, call schema.ToolCall, reg *tool.Registry) Result {
 	started := time.Now()
+	publishToolEvent(ctx, cogruntime.Event{
+		Timestamp:  started,
+		Type:       cogruntime.EventToolCallStarted,
+		Component:  "toolruntime.executor",
+		ToolName:   call.Name,
+		ToolCallID: call.ID,
+	})
+
 	result := Result{
 		ToolCallID: call.ID,
 		Name:       call.Name,
@@ -112,6 +121,7 @@ func (e *DefaultExecutor) executeCall(ctx context.Context, call schema.ToolCall,
 		}
 		result.Meta.DurationMillis = time.Since(started).Milliseconds()
 		result.Meta.Attempts = 1
+		publishToolFinishEvent(ctx, result, started)
 		return result
 	}
 
@@ -123,6 +133,7 @@ func (e *DefaultExecutor) executeCall(ctx context.Context, call schema.ToolCall,
 		}
 		result.Meta.DurationMillis = time.Since(started).Milliseconds()
 		result.Meta.Attempts = 1
+		publishToolFinishEvent(ctx, result, started)
 		return result
 	}
 
@@ -161,6 +172,7 @@ func (e *DefaultExecutor) executeCall(ctx context.Context, call schema.ToolCall,
 			result.Error = nil
 			result.Meta.TimedOut = false
 			result.Meta.DurationMillis = time.Since(started).Milliseconds()
+			publishToolFinishEvent(ctx, result, started)
 			return result
 		}
 
@@ -173,6 +185,7 @@ func (e *DefaultExecutor) executeCall(ctx context.Context, call schema.ToolCall,
 	result.Meta.DurationMillis = time.Since(started).Milliseconds()
 	result.Meta.TimedOut = timedOut
 	result.Error = classifyExecError(lastErr, timedOut)
+	publishToolFinishEvent(ctx, result, started)
 	return result
 }
 
@@ -221,3 +234,42 @@ func classifyExecError(err error, timedOut bool) *ExecError {
 }
 
 var _ Executor = (*DefaultExecutor)(nil)
+
+func publishToolEvent(ctx context.Context, event cogruntime.Event) {
+	bus, ok := cogruntime.EventBusFromContext(ctx)
+	if !ok {
+		return
+	}
+	if event.RunID == "" {
+		runID, _ := cogruntime.RunIDFromContext(ctx)
+		event.RunID = runID
+	}
+	if event.Step == 0 {
+		if step, ok := cogruntime.StepFromContext(ctx); ok {
+			event.Step = step
+		}
+	}
+	if event.Timestamp.IsZero() {
+		event.Timestamp = time.Now()
+	}
+	bus.Publish(ctx, event)
+}
+
+func publishToolFinishEvent(ctx context.Context, result Result, started time.Time) {
+	var err error
+	if result.Error != nil {
+		err = errors.New(result.Error.Message)
+	}
+
+	publishToolEvent(ctx, cogruntime.Event{
+		Timestamp:  time.Now(),
+		Type:       cogruntime.EventToolCallFinished,
+		Component:  "toolruntime.executor",
+		ToolName:   result.Name,
+		ToolCallID: result.ToolCallID,
+		Attempts:   result.Meta.Attempts,
+		TimedOut:   result.Meta.TimedOut,
+		Duration:   time.Since(started),
+		Err:        err,
+	})
+}
