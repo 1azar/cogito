@@ -3,9 +3,12 @@ package workflow
 import (
 	"bytes"
 	"context"
+	"slices"
 	"strings"
 	"testing"
 	"time"
+
+	cogruntime "github.com/1azar/cogito/runtime"
 )
 
 func TestConsoleObserverWritesEvents(t *testing.T) {
@@ -47,5 +50,43 @@ func TestTUIObserverWritesEvents(t *testing.T) {
 	}
 	if !strings.Contains(out, "[workflow] finished") {
 		t.Fatalf("expected workflow finished line, got: %q", out)
+	}
+}
+
+func TestWorkflowPublishesEventsToRuntimeBus(t *testing.T) {
+	g := NewGraph[map[string]any]()
+	g.AddNode(FunctionNode(
+		"step",
+		func(ctx context.Context, st State) (State, error) {
+			return st, nil
+		},
+		"Simple step",
+	)).
+		AddEdge("step", EndNode).
+		SetEntry("step")
+
+	bus := cogruntime.NewEventBus()
+	cfg := DefaultConfig()
+	cfg.EventBus = bus
+	g.SetConfig(cfg)
+
+	types := make([]cogruntime.EventType, 0)
+	unsubscribe := bus.Subscribe(func(ctx context.Context, event cogruntime.Event) {
+		types = append(types, event.Type)
+	})
+	defer unsubscribe()
+
+	if _, err := g.Run(context.Background(), map[string]any{}); err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+
+	if !slices.Contains(types, cogruntime.EventRunStarted) {
+		t.Fatalf("expected run_started event, got %v", types)
+	}
+	if !slices.Contains(types, cogruntime.EventNodeStarted) {
+		t.Fatalf("expected node_started event, got %v", types)
+	}
+	if !slices.Contains(types, cogruntime.EventRunFinished) {
+		t.Fatalf("expected run_finished event, got %v", types)
 	}
 }

@@ -3,10 +3,12 @@ package toolruntime
 import (
 	"context"
 	"encoding/json"
+	"slices"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	cogruntime "github.com/1azar/cogito/runtime"
 	"github.com/1azar/cogito/schema"
 	"github.com/1azar/cogito/tool"
 )
@@ -123,5 +125,45 @@ func TestDefaultExecutor_ParallelExecution(t *testing.T) {
 	}
 	if elapsed >= 240*time.Millisecond {
 		t.Fatalf("expected parallel execution to finish faster, elapsed=%s", elapsed)
+	}
+}
+
+func TestDefaultExecutor_EmitsToolEvents(t *testing.T) {
+	echoTool, err := tool.Func("echo", "echoes name", func(ctx context.Context, in echoInput) (echoOutput, error) {
+		return echoOutput{Reply: "hello " + in.Name}, nil
+	})
+	if err != nil {
+		t.Fatalf("failed to create tool: %v", err)
+	}
+
+	reg := tool.NewRegistry()
+	reg.Register(echoTool)
+
+	bus := cogruntime.NewEventBus()
+	types := make([]cogruntime.EventType, 0)
+	unsubscribe := bus.Subscribe(func(ctx context.Context, event cogruntime.Event) {
+		types = append(types, event.Type)
+	})
+	defer unsubscribe()
+
+	ctx := cogruntime.WithEventBus(context.Background(), bus)
+	ctx = cogruntime.WithRunID(ctx, "run_tools")
+	ctx = cogruntime.WithStep(ctx, 1)
+
+	executor := NewExecutor(DefaultPolicy())
+	_, execErr := executor.Execute(ctx, []schema.ToolCall{{
+		ID:        "c1",
+		Name:      "echo",
+		Arguments: json.RawMessage(`{"name":"Bob"}`),
+	}}, reg)
+	if execErr != nil {
+		t.Fatalf("unexpected executor error: %v", execErr)
+	}
+
+	if !slices.Contains(types, cogruntime.EventToolCallStarted) {
+		t.Fatalf("expected %s event, got %v", cogruntime.EventToolCallStarted, types)
+	}
+	if !slices.Contains(types, cogruntime.EventToolCallFinished) {
+		t.Fatalf("expected %s event, got %v", cogruntime.EventToolCallFinished, types)
 	}
 }

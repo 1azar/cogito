@@ -80,6 +80,15 @@ func (m *demoLLM) Generate(_ context.Context, req llm.Request) (*llm.Response, e
 	}, nil
 }
 
+func (m *demoLLM) GenerateStream(ctx context.Context, req llm.Request) (llm.Stream, error) {
+	resp, err := m.Generate(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+
+	return llm.StreamFromResponse(resp), nil
+}
+
 func main() {
 	ag := agent.NewAgent[State](&demoLLM{}).
 		WithController(&dynamicController[State]{}).

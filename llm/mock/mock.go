@@ -24,3 +24,12 @@ func (m Mock) Generate(ctx context.Context, req llm.Request) (*llm.Response, err
 		Text: `Answer to: "` + last.Content + `"`,
 	}, nil
 }
+
+func (m Mock) GenerateStream(ctx context.Context, req llm.Request) (llm.Stream, error) {
+	resp, err := m.Generate(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+
+	return llm.StreamFromResponse(resp), nil
+}

@@ -4,19 +4,28 @@ import (
 	"context"
 	"fmt"
 	"time"
+
+	cogruntime "github.com/1azar/cogito/runtime"
 )
 
 // Run executes the workflow graph starting from the entry node
 func (g *Graph[T]) Run(ctx context.Context, initialState T) (T, error) {
 	g.mu.RLock()
 	observer := g.config.Observer
+	eventBus := g.config.EventBus
 	entry := g.entry
 	g.mu.RUnlock()
+
+	runID, ok := cogruntime.RunIDFromContext(ctx)
+	if !ok {
+		runID = cogruntime.NewRunID("wf")
+		ctx = cogruntime.WithRunID(ctx, runID)
+	}
 
 	// Validate the graph before execution
 	if err := g.Validate(); err != nil {
 		var zero T
-		g.emitEvent(ctx, observer, Event{Type: EventWorkflowFailed, NodeID: entry, Err: err})
+		g.emitEvent(ctx, observer, eventBus, Event{Type: EventWorkflowFailed, NodeID: entry, Err: err})
 		return zero, fmt.Errorf("graph validation failed: %w", err)
 	}
 
@@ -24,10 +33,11 @@ func (g *Graph[T]) Run(ctx context.Context, initialState T) (T, error) {
 	maxIterations := g.config.MaxIterations
 	errorHandler := g.config.ErrorHandler
 	observer = g.config.Observer
+	eventBus = g.config.EventBus
 	entry = g.entry
 	g.mu.RUnlock()
 
-	g.emitEvent(ctx, observer, Event{Type: EventWorkflowStarted, NodeID: entry})
+	g.emitEvent(ctx, observer, eventBus, Event{Type: EventWorkflowStarted, NodeID: entry})
 
 	state := initialState
 	currentNode := entry
@@ -36,14 +46,14 @@ func (g *Graph[T]) Run(ctx context.Context, initialState T) (T, error) {
 		// Check for context cancellation
 		select {
 		case <-ctx.Done():
-			g.emitEvent(ctx, observer, Event{Type: EventWorkflowCanceled, NodeID: currentNode, Iteration: iteration, Err: ctx.Err()})
+			g.emitEvent(ctx, observer, eventBus, Event{Type: EventWorkflowCanceled, NodeID: currentNode, Iteration: iteration, Err: ctx.Err()})
 			return state, fmt.Errorf("execution cancelled: %w", ctx.Err())
 		default:
 		}
 
 		// Check if we've reached the end
 		if currentNode == EndNode {
-			g.emitEvent(ctx, observer, Event{Type: EventWorkflowFinished, Iteration: iteration})
+			g.emitEvent(ctx, observer, eventBus, Event{Type: EventWorkflowFinished, Iteration: iteration})
 			return state, nil
 		}
 
@@ -54,13 +64,13 @@ func (g *Graph[T]) Run(ctx context.Context, initialState T) (T, error) {
 
 		if !exists {
 			err := fmt.Errorf("node '%s' not found", currentNode)
-			g.emitEvent(ctx, observer, Event{Type: EventWorkflowFailed, NodeID: currentNode, Iteration: iteration, Err: err})
+			g.emitEvent(ctx, observer, eventBus, Event{Type: EventWorkflowFailed, NodeID: currentNode, Iteration: iteration, Err: err})
 			return state, err
 		}
 
 		startedAt := time.Now()
 		desc := node.Description()
-		g.emitEvent(ctx, observer, Event{
+		g.emitEvent(ctx, observer, eventBus, Event{
 			Type:            EventNodeStarted,
 			NodeID:          currentNode,
 			NodeDescription: desc,
@@ -72,7 +82,7 @@ func (g *Graph[T]) Run(ctx context.Context, initialState T) (T, error) {
 		newState, err := node.Execute(ctx, state)
 		duration := time.Since(startedAt)
 		if err != nil {
-			g.emitEvent(ctx, observer, Event{
+			g.emitEvent(ctx, observer, eventBus, Event{
 				Type:            EventNodeFailed,
 				NodeID:          currentNode,
 				NodeDescription: desc,
@@ -87,7 +97,7 @@ func (g *Graph[T]) Run(ctx context.Context, initialState T) (T, error) {
 				handledState, handlerErr := errorHandler(currentNode, err, state)
 				if handlerErr != nil {
 					resultErr := fmt.Errorf("node '%s' error: %w (error handler also failed: %v)", currentNode, err, handlerErr)
-					g.emitEvent(ctx, observer, Event{Type: EventWorkflowFailed, NodeID: currentNode, Iteration: iteration, Err: resultErr})
+					g.emitEvent(ctx, observer, eventBus, Event{Type: EventWorkflowFailed, NodeID: currentNode, Iteration: iteration, Err: resultErr})
 					return state, resultErr
 				}
 				// Type assert the handled state back to T
@@ -95,16 +105,16 @@ func (g *Graph[T]) Run(ctx context.Context, initialState T) (T, error) {
 				state, ok = handledState.(T)
 				if !ok {
 					err := fmt.Errorf("error handler returned invalid state type")
-					g.emitEvent(ctx, observer, Event{Type: EventWorkflowFailed, NodeID: currentNode, Iteration: iteration, Err: err})
+					g.emitEvent(ctx, observer, eventBus, Event{Type: EventWorkflowFailed, NodeID: currentNode, Iteration: iteration, Err: err})
 					return state, err
 				}
 			} else {
 				resultErr := fmt.Errorf("node '%s' execution error: %w", currentNode, err)
-				g.emitEvent(ctx, observer, Event{Type: EventWorkflowFailed, NodeID: currentNode, Iteration: iteration, Err: resultErr})
+				g.emitEvent(ctx, observer, eventBus, Event{Type: EventWorkflowFailed, NodeID: currentNode, Iteration: iteration, Err: resultErr})
 				return state, resultErr
 			}
 		} else {
-			g.emitEvent(ctx, observer, Event{
+			g.emitEvent(ctx, observer, eventBus, Event{
 				Type:            EventNodeFinished,
 				NodeID:          currentNode,
 				NodeDescription: desc,
@@ -118,7 +128,7 @@ func (g *Graph[T]) Run(ctx context.Context, initialState T) (T, error) {
 			state, ok = newState.(T)
 			if !ok {
 				err := fmt.Errorf("node execution returned invalid state type")
-				g.emitEvent(ctx, observer, Event{Type: EventWorkflowFailed, NodeID: currentNode, Iteration: iteration, Err: err})
+				g.emitEvent(ctx, observer, eventBus, Event{Type: EventWorkflowFailed, NodeID: currentNode, Iteration: iteration, Err: err})
 				return state, err
 			}
 		}
@@ -127,30 +137,74 @@ func (g *Graph[T]) Run(ctx context.Context, initialState T) (T, error) {
 		nextNode, err := g.findNextNode(currentNode, state)
 		if err != nil {
 			resultErr := fmt.Errorf("error finding next node from '%s': %w", currentNode, err)
-			g.emitEvent(ctx, observer, Event{Type: EventWorkflowFailed, NodeID: currentNode, Iteration: iteration, Err: resultErr})
+			g.emitEvent(ctx, observer, eventBus, Event{Type: EventWorkflowFailed, NodeID: currentNode, Iteration: iteration, Err: resultErr})
 			return state, resultErr
 		}
 
-		g.emitEvent(ctx, observer, Event{Type: EventEdgeEvaluated, NodeID: currentNode, NextNode: nextNode, Iteration: iteration})
+		g.emitEvent(ctx, observer, eventBus, Event{Type: EventEdgeEvaluated, NodeID: currentNode, NextNode: nextNode, Iteration: iteration})
 
 		currentNode = nextNode
 	}
 
 	err := fmt.Errorf("max iterations (%d) exceeded, current node: %s", maxIterations, currentNode)
-	g.emitEvent(ctx, observer, Event{Type: EventWorkflowFailed, NodeID: currentNode, Err: err})
+	g.emitEvent(ctx, observer, eventBus, Event{Type: EventWorkflowFailed, NodeID: currentNode, Err: err})
 	return state, err
 }
 
-func (g *Graph[T]) emitEvent(ctx context.Context, observer Observer, event Event) {
+func (g *Graph[T]) emitEvent(ctx context.Context, observer Observer, eventBus cogruntime.EventBus, event Event) {
 	if observer == nil {
+		// keep going to event bus path
+	} else {
+		defer func() {
+			_ = recover()
+		}()
+
+		observer.OnEvent(ctx, event)
+	}
+
+	if eventBus == nil {
 		return
 	}
 
-	defer func() {
-		_ = recover()
-	}()
+	runID, _ := cogruntime.RunIDFromContext(ctx)
+	ts := event.StartedAt
+	if ts.IsZero() {
+		ts = time.Now()
+	}
+	eventBus.Publish(ctx, cogruntime.Event{
+		Timestamp: ts,
+		Type:      mapWorkflowEventType(event.Type),
+		RunID:     runID,
+		Component: "workflow",
+		NodeID:    event.NodeID,
+		Step:      event.Iteration,
+		Duration:  event.Duration,
+		Err:       event.Err,
+		Message:   event.NodeDescription,
+	})
+}
 
-	observer.OnEvent(ctx, event)
+func mapWorkflowEventType(eventType EventType) cogruntime.EventType {
+	switch eventType {
+	case EventNodeStarted:
+		return cogruntime.EventNodeStarted
+	case EventNodeFinished:
+		return cogruntime.EventNodeFinished
+	case EventNodeFailed:
+		return cogruntime.EventNodeFailed
+	case EventEdgeEvaluated:
+		return cogruntime.EventEdgeEvaluated
+	case EventWorkflowStarted:
+		return cogruntime.EventRunStarted
+	case EventWorkflowFinished:
+		return cogruntime.EventRunFinished
+	case EventWorkflowCanceled:
+		return cogruntime.EventRunCanceled
+	case EventWorkflowFailed:
+		return cogruntime.EventRunFailed
+	default:
+		return cogruntime.EventRunFailed
+	}
 }
 
 // findNextNode finds the next node based on edges from the current node

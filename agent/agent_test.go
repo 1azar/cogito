@@ -2,20 +2,28 @@ package agent
 
 import (
 	"context"
+	"errors"
+	"slices"
 	"testing"
 
+	"github.com/1azar/cogito/controller/simple"
 	"github.com/1azar/cogito/llm"
 	"github.com/1azar/cogito/memory/buffer"
+	cogruntime "github.com/1azar/cogito/runtime"
 	"github.com/1azar/cogito/schema"
 )
 
 type recordingLLM struct {
 	responses []*llm.Response
 	requests  []llm.Request
+	err       error
 }
 
 func (r *recordingLLM) Generate(_ context.Context, req llm.Request) (*llm.Response, error) {
 	r.requests = append(r.requests, req)
+	if r.err != nil {
+		return nil, r.err
+	}
 
 	if len(r.responses) == 0 {
 		return &llm.Response{}, nil
@@ -24,6 +32,15 @@ func (r *recordingLLM) Generate(_ context.Context, req llm.Request) (*llm.Respon
 	resp := r.responses[0]
 	r.responses = r.responses[1:]
 	return resp, nil
+}
+
+func (r *recordingLLM) GenerateStream(ctx context.Context, req llm.Request) (llm.Stream, error) {
+	resp, err := r.Generate(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+
+	return llm.StreamFromResponse(resp), nil
 }
 
 func TestCallLLMStoresUserAndAssistantInMemory(t *testing.T) {
@@ -140,5 +157,51 @@ func TestCallLLMIncludesMemoryHistoryInRequest(t *testing.T) {
 	}
 	if history[2].Role != schema.RoleAssistant || history[2].Content != "answer" {
 		t.Fatalf("unexpected history assistant message: %+v", history[2])
+	}
+}
+
+func TestRunPublishesLifecycleEvents(t *testing.T) {
+	ctx := context.Background()
+	fake := &recordingLLM{responses: []*llm.Response{{Text: "ok"}}}
+	ag := NewAgent[struct{}](fake).WithController(simple.New[struct{}]())
+
+	types := make([]cogruntime.EventType, 0)
+	unsubscribe := ag.EventBus().Subscribe(func(ctx context.Context, event cogruntime.Event) {
+		types = append(types, event.Type)
+	})
+	defer unsubscribe()
+
+	if _, err := ag.Run(ctx, "hello"); err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+
+	if !slices.Contains(types, cogruntime.EventRunStarted) {
+		t.Fatalf("expected run_started event, got %v", types)
+	}
+	if !slices.Contains(types, cogruntime.EventRunFinished) {
+		t.Fatalf("expected run_finished event, got %v", types)
+	}
+}
+
+func TestRunPublishesFailureEvent(t *testing.T) {
+	ctx := context.Background()
+	fake := &recordingLLM{err: errors.New("llm boom")}
+	ag := NewAgent[struct{}](fake).WithController(simple.New[struct{}]())
+
+	types := make([]cogruntime.EventType, 0)
+	unsubscribe := ag.EventBus().Subscribe(func(ctx context.Context, event cogruntime.Event) {
+		types = append(types, event.Type)
+	})
+	defer unsubscribe()
+
+	if _, err := ag.Run(ctx, "hello"); err == nil {
+		t.Fatal("expected error, got nil")
+	}
+
+	if !slices.Contains(types, cogruntime.EventRunStarted) {
+		t.Fatalf("expected run_started event, got %v", types)
+	}
+	if !slices.Contains(types, cogruntime.EventRunFailed) {
+		t.Fatalf("expected run_failed event, got %v", types)
 	}
 }
