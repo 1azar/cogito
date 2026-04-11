@@ -8,6 +8,10 @@ import (
 	cogruntime "github.com/1azar/cogito/runtime"
 )
 
+type observerContextKey struct{}
+
+type eventBusContextKey struct{}
+
 // Run executes the workflow graph starting from the entry node
 func (g *Graph[T]) Run(ctx context.Context, initialState T) (T, error) {
 	g.mu.RLock()
@@ -15,6 +19,21 @@ func (g *Graph[T]) Run(ctx context.Context, initialState T) (T, error) {
 	eventBus := g.config.EventBus
 	entry := g.entry
 	g.mu.RUnlock()
+
+	if observer == nil {
+		if inheritedObserver, ok := observerFromContext(ctx); ok {
+			observer = inheritedObserver
+		}
+	}
+
+	if eventBus == nil {
+		if inheritedEventBus, ok := eventBusFromContext(ctx); ok {
+			eventBus = inheritedEventBus
+		}
+	}
+
+	ctx = withObserver(ctx, observer)
+	ctx = withEventBus(ctx, eventBus)
 
 	runID, ok := cogruntime.RunIDFromContext(ctx)
 	if !ok {
@@ -36,6 +55,21 @@ func (g *Graph[T]) Run(ctx context.Context, initialState T) (T, error) {
 	eventBus = g.config.EventBus
 	entry = g.entry
 	g.mu.RUnlock()
+
+	if observer == nil {
+		if inheritedObserver, ok := observerFromContext(ctx); ok {
+			observer = inheritedObserver
+		}
+	}
+
+	if eventBus == nil {
+		if inheritedEventBus, ok := eventBusFromContext(ctx); ok {
+			eventBus = inheritedEventBus
+		}
+	}
+
+	ctx = withObserver(ctx, observer)
+	ctx = withEventBus(ctx, eventBus)
 
 	g.emitEvent(ctx, observer, eventBus, Event{Type: EventWorkflowStarted, NodeID: entry})
 
@@ -221,4 +255,28 @@ func (g *Graph[T]) findNextNode(fromNode string, state State) (string, error) {
 
 	// No outgoing edge means we should end
 	return EndNode, nil
+}
+
+func withObserver(ctx context.Context, observer Observer) context.Context {
+	return context.WithValue(ctx, observerContextKey{}, observer)
+}
+
+func observerFromContext(ctx context.Context) (Observer, bool) {
+	observer, ok := ctx.Value(observerContextKey{}).(Observer)
+	if !ok || observer == nil {
+		return nil, false
+	}
+	return observer, true
+}
+
+func withEventBus(ctx context.Context, eventBus cogruntime.EventBus) context.Context {
+	return context.WithValue(ctx, eventBusContextKey{}, eventBus)
+}
+
+func eventBusFromContext(ctx context.Context) (cogruntime.EventBus, bool) {
+	eventBus, ok := ctx.Value(eventBusContextKey{}).(cogruntime.EventBus)
+	if !ok || eventBus == nil {
+		return nil, false
+	}
+	return eventBus, true
 }

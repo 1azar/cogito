@@ -238,6 +238,20 @@ An `Agent[T]` wires the runtime pieces together:
 - `SetConfig(config)` to tune execution (max iterations, error handler, observer)
 - `Run(ctx, state)` to execute until `workflow.EndNode`
 
+You can also compose graphs with subgraphs:
+
+- `workflow.NewSubgraphNode(id, childGraph, desc)` when parent and child use the same state type
+- `workflow.NewSubgraphNodeWithMapper(id, childGraph, extract, inject, desc)` when parent and child states differ
+
+Runnable example (merging multiple child graphs into one parent graph):
+
+```bash
+go run ./examples/subgraph_merge
+```
+
+When nested graphs run, observer/event bus inheritance is automatic: if a child graph does not define
+its own `Observer` or `EventBus`, it inherits them from the parent run context.
+
 For opt-in workflow observability, attach an observer in config:
 
 ```go
