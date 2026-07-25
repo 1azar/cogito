@@ -61,9 +61,9 @@ type sessionState struct {
 
 func main() {
 	llm, err := openai.New(openai.Config{
-		APIKey:  os.Getenv("OPENAI_API_KEY"),
-		BaseURL: os.Getenv("OPENAI_BASE_URL"),
-		Model:   os.Getenv("OPENAI_MODEL"),
+		APIKey:  os.Getenv("GLM_OPENAI_API_KEY"),
+		BaseURL: os.Getenv("GLM_OPENAI_BASE_URL"),
+		Model:   os.Getenv("GLM_OPENAI_MODEL"),
 		Timeout: 0,
 	})
 	if err != nil {

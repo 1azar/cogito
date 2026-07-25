@@ -20,6 +20,14 @@ const (
 	EventLLMTextDelta           EventType = "llm_text_delta"
 	EventToolCallStarted        EventType = "tool_call_started"
 	EventToolCallFinished       EventType = "tool_call_finished"
+	EventRLMRunStarted          EventType = "rlm_run_started"
+	EventRLMRunFinished         EventType = "rlm_run_finished"
+	EventRLMIterationStarted    EventType = "rlm_iteration_started"
+	EventRLMIterationFinished   EventType = "rlm_iteration_finished"
+	EventRLMCodeExecuted        EventType = "rlm_code_executed"
+	EventRLMSubcallStarted      EventType = "rlm_subcall_started"
+	EventRLMSubcallFinished     EventType = "rlm_subcall_finished"
+	EventRLMLimitReached        EventType = "rlm_limit_reached"
 )
 
 type Event struct {

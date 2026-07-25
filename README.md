@@ -78,7 +78,8 @@ Agent Core
 Provider Adapters
   ├─ openai
   ├─ ollama
-  └─ mock
+  ├─ mock
+  └─ rlm (recursive long-context wrapper)
 ```
 
 ### Core Interfaces (Current)
@@ -119,6 +120,61 @@ ctx = llm.WithParams(ctx, llm.Params{
 	TopP:        &topP,
 })
 ```
+
+## Recursive Language Models (`rlm`)
+
+`rlm.Model` is a drop-in `llm.LLM` wrapper for programmatic exploration of long
+contexts. Each request gets an isolated persistent Python REPL. The root model
+can inspect the serialized messages and tool definitions, make bounded parallel
+or recursive sub-calls, and return normal text or standard Cogito tool calls.
+
+```go
+env := docker.New(docker.Config{})
+
+model, err := rlm.New(baseLLM, rlm.Config{
+	Environment: env,
+	SubLLM:      cheaperLLM, // optional; defaults to baseLLM
+	MaxDepth:    2,
+})
+if err != nil {
+	panic(err)
+}
+
+ag := agent.NewAgent[State](model).
+	WithController(react.New[State](react.Config{MaxSteps: 5}))
+```
+
+Use `rlm.WithRootPrompt(ctx, prompt)` when the short task should be supplied
+separately from the serialized request context. Without it, RLM uses the last
+non-empty user message.
+
+The runnable [`examples/rlm`](./examples/rlm) program demonstrates an incident
+response analyst over a mixed production corpus. It embeds service logs,
+metrics, deploy notes, runbook guidance, support signals, and gateway notes,
+assigns stable source IDs, and passes the corpus to an `Agent`. The short
+investigation task is kept separate with `rlm.WithRootPrompt`, and the final
+report cites sources such as `[I01]`.
+
+All evidence, prompts, model settings, and limits are declared near the top of
+`main.go`; there are no CLI arguments, external URLs, or required local files.
+The only required environment variable is the API key:
+
+```bash
+export OPENAI_API_KEY=...
+docker pull python:3.12-slim
+go run ./examples/rlm
+```
+
+The Docker backend uses `python:3.12-slim` by default and invokes the Docker CLI.
+It runs without networking or Linux capabilities, as a non-root user, with a
+read-only root filesystem and CPU, memory, and PID limits. Context stays on the
+framed stdin/stdout channel; it is not mounted into the container.
+
+RLM aggregates usage across all root and recursive calls. `llm.Response.Raw`
+contains `rlm.Metadata` with iterations, total calls, maximum reached depth,
+duration, and termination reason. Runtime event buses also receive RLM run,
+iteration, code execution, sub-call, and limit events; context and full code are
+not included.
 
 ## Tool System
 
